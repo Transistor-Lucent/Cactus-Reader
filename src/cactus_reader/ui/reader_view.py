@@ -18,18 +18,24 @@ from ..navigation import (
     turn_forward,
     visible_pages,
 )
+from ..settings import clamp_page_gap
 from .theme import COLORS
 
 _CACHE_ENTRIES = 8
 _CACHE_BUCKET = 64
 _MAX_TARGET_PIXELS = 16_000_000
-_GAP = 6.0
+_ZOOM_LEVELS = (
+    0.25, 0.33, 0.5, 0.67, 0.75, 1.0,
+    1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0,
+)
+_ZOOM_DEFAULT = 1.0
 
 
 class ReaderView(QWidget):
     positionChanged = Signal(int)
     fullscreenRequested = Signal()
     boundaryReached = Signal(str)
+    zoomChanged = Signal(float)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -45,6 +51,8 @@ class ReaderView(QWidget):
         self._step = 2
         self._rtl = False
         self._fit = "height"
+        self._page_gap = 6
+        self._zoom = _ZOOM_DEFAULT
 
         self._pan = QPointF(0.0, 0.0)
         self._content_size = QSize(0, 0)
@@ -70,11 +78,20 @@ class ReaderView(QWidget):
     def page_count(self) -> int:
         return self._book.page_count if self._book is not None else 0
 
+    @property
+    def page_gap(self) -> int:
+        return self._page_gap
+
+    @property
+    def zoom_factor(self) -> float:
+        return self._zoom
+
     def set_book(self, book: Book | None, start_page: int = 0) -> None:
         self._book = book
         self._cache.clear()
         self._errors.clear()
         self._pan = QPointF(0.0, 0.0)
+        self._zoom = _ZOOM_DEFAULT
         if book is not None and book.page_count:
             self._current = max(0, min(int(start_page), book.page_count - 1))
         else:
@@ -103,9 +120,48 @@ class ReaderView(QWidget):
         mode = mode if mode in ("height", "width") else "height"
         if mode != self._fit:
             self._fit = mode
+            self._zoom = _ZOOM_DEFAULT
             self._pan = QPointF(0.0, 0.0)
             self._refresh_cursor()
             self.update()
+
+    def set_page_gap(self, gap: int) -> None:
+        gap = clamp_page_gap(gap)
+        if gap != self._page_gap:
+            self._page_gap = gap
+            self._pan = QPointF(0.0, 0.0)
+            self._refresh_cursor()
+            self.update()
+
+    def zoom_in(self) -> bool:
+        for level in _ZOOM_LEVELS:
+            if level > self._zoom + 1e-6:
+                self._apply_zoom(level)
+                return True
+        return False
+
+    def zoom_out(self) -> bool:
+        for level in reversed(_ZOOM_LEVELS):
+            if level < self._zoom - 1e-6:
+                self._apply_zoom(level)
+                return True
+        return False
+
+    def reset_zoom(self) -> bool:
+        if abs(self._zoom - _ZOOM_DEFAULT) < 1e-6:
+            return False
+        self._apply_zoom(_ZOOM_DEFAULT)
+        return True
+
+    def _apply_zoom(self, level: float) -> None:
+        level = max(_ZOOM_LEVELS[0], min(_ZOOM_LEVELS[-1], float(level)))
+        if abs(level - self._zoom) < 1e-6:
+            return
+        self._zoom = level
+        self._pan = QPointF(0.0, 0.0)
+        self._refresh_cursor()
+        self.update()
+        self.zoomChanged.emit(level)
 
     def go_to(self, index: int) -> None:
         if self._book is None or self._book.page_count <= 0:
@@ -197,7 +253,8 @@ class ReaderView(QWidget):
             return
         width = max(1, self.width())
         height = max(1, self.height())
-        gap = _GAP if len(indices) > 1 else 0.0
+        gap = float(self._page_gap) if len(indices) > 1 else 0.0
+        zoom = self._zoom
 
         # In right-to-left spreads the earlier page sits on the right.
         visual = list(reversed(indices)) if self._two_page and self._rtl else list(indices)
@@ -207,13 +264,13 @@ class ReaderView(QWidget):
         ]
 
         if self._fit == "height":
-            box_height = float(height)
+            box_height = float(height) * zoom
             widths = [box_height * aspect for aspect in aspects]
             heights = [box_height for _ in aspects]
         else:
             available = max(1.0, width - gap * (len(visual) - 1))
             total_aspect = sum(aspects) or 1.0
-            box_height = available / total_aspect
+            box_height = (available / total_aspect) * zoom
             widths = [box_height * aspect for aspect in aspects]
             heights = [box_height for _ in aspects]
 
@@ -340,6 +397,13 @@ class ReaderView(QWidget):
     def mousePressEvent(self, event) -> None:  # noqa: N802
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         if (
+            event.button() == Qt.MouseButton.MiddleButton
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            self.reset_zoom()
+            event.accept()
+            return
+        if (
             event.button() == Qt.MouseButton.LeftButton
             and self._book is not None
             and self.has_overflow()
@@ -383,6 +447,13 @@ class ReaderView(QWidget):
         if delta == 0:
             delta = event.pixelDelta().y()
         if delta == 0:
+            return
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            if delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+            event.accept()
             return
         self._wheel_accum += delta
         threshold = 90 if event.angleDelta().y() else 36

@@ -12,7 +12,7 @@ if "--offscreen" in sys.argv:
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -54,21 +54,35 @@ def main() -> int:
     settings.direction = "ltr"
     settings.fit_mode = "height"
     window._apply_reading_settings()
+
+    window._set_fullscreen(True)
+    window._edge_timer.stop()
+    QTest.qWait(300)
+    area = window._central.rect()
+    window._update_edge_buttons(QPoint(int(area.width() * 0.05), area.height() // 2))
+    QTest.qWait(150)
+    window.grab().save(str(out / "05_fullscreen_left.png"))
+    window._update_edge_buttons(QPoint(int(area.width() * 0.95), area.height() // 2))
+    QTest.qWait(150)
+    window.grab().save(str(out / "06_fullscreen_right.png"))
+    window._set_fullscreen(False)
+    QTest.qWait(200)
+
     dialog = SettingsDialog(settings, window)
     dialog.show()
     QTest.qWait(250)
-    dialog.grab().save(str(out / "05_settings.png"))
+    dialog.grab().save(str(out / "07_settings.png"))
     dialog.close()
 
     help_dialog = HelpDialog(window)
     help_dialog.show()
     QTest.qWait(250)
-    help_dialog.grab().save(str(out / "06_help.png"))
+    help_dialog.grab().save(str(out / "08_help.png"))
     help_dialog.close()
 
     window.close_book()
     QTest.qWait(250)
-    window.grab().save(str(out / "07_welcome_recent.png"))
+    window.grab().save(str(out / "09_welcome_recent.png"))
 
     window.close()
     QTest.qWait(100)

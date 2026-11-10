@@ -2,20 +2,133 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
-from ..settings import DEFAULTS, Settings
+from ..settings import (
+    DEFAULT_PAGE_GAP,
+    DEFAULTS,
+    PAGE_GAP_MAX,
+    PAGE_GAP_MIN,
+    PAGE_GAP_PRESETS,
+    Settings,
+    clamp_page_gap,
+)
 from .theme import enable_dark_titlebar, icon
 from .widgets import SegmentedControl
+
+_CUSTOM_GAP = "custom"
+
+
+class GapPicker(QWidget):
+    """Preset gap buttons plus a numeric custom input with hard limits."""
+
+    changed = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._value = DEFAULT_PAGE_GAP
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        options = [
+            (str(gap), str(gap), f"两页之间留 {gap} 像素")
+            for gap in PAGE_GAP_PRESETS
+        ]
+        options.append((_CUSTOM_GAP, "自定义", "输入任意像素值"))
+        self._segments = SegmentedControl(options)
+        self._segments.changed.connect(self._on_segment)
+        custom_button = self._segments.button(_CUSTOM_GAP)
+        if custom_button is not None:
+            custom_button.clicked.connect(self._focus_custom)
+        layout.addWidget(self._segments)
+
+        self._input = QLineEdit()
+        self._input.setObjectName("GapInput")
+        self._input.setFixedWidth(58)
+        self._input.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._input.setMaxLength(9)
+        self._input.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"-?[0-9]{0,9}"), self._input)
+        )
+        self._input.setToolTip(
+            f"输入 {PAGE_GAP_MIN}–{PAGE_GAP_MAX} 像素，按回车确认"
+        )
+        self._input.setAccessibleName("自定义双页间距")
+        self._input.returnPressed.connect(self.commit)
+        self._input.editingFinished.connect(self.commit)
+        self._input.textEdited.connect(self._on_text_edited)
+        layout.addWidget(self._input)
+
+        unit = QLabel("px")
+        unit.setObjectName("HintLabel")
+        layout.addWidget(unit)
+        self.set_value(DEFAULT_PAGE_GAP)
+
+    def value(self) -> int:
+        return self._value
+
+    def set_value(self, value: int) -> None:
+        self._value = clamp_page_gap(value)
+        self._sync_display()
+
+    def commit(self) -> None:
+        text = self._input.text().strip()
+        if not text:
+            self._sync_display()
+            return
+        try:
+            raw = int(text)
+        except ValueError:
+            self._sync_display()
+            return
+        clamped = clamp_page_gap(raw)
+        previous = self._value
+        self._value = clamped
+        self._sync_display()
+        if clamped != previous:
+            self.changed.emit(clamped)
+
+    def _sync_display(self) -> None:
+        if self._value in PAGE_GAP_PRESETS:
+            self._segments.set_value(str(self._value))
+        else:
+            self._segments.set_value(_CUSTOM_GAP)
+        text = str(self._value)
+        if self._input.text() != text:
+            self._input.setText(text)
+
+    def _on_segment(self, value: str) -> None:
+        if value == _CUSTOM_GAP:
+            self._focus_custom()
+            return
+        self._value = clamp_page_gap(int(value))
+        self._sync_display()
+        self.changed.emit(self._value)
+
+    def _focus_custom(self) -> None:
+        self._input.setFocus(Qt.FocusReason.MouseFocusReason)
+        self._input.selectAll()
+
+    def _on_text_edited(self, text: str) -> None:
+        if text.isdigit():
+            number = int(text)
+            if number in PAGE_GAP_PRESETS and str(number) == text:
+                self._segments.set_value(text)
+                return
+        self._segments.set_value(_CUSTOM_GAP)
 
 
 class SettingsDialog(QDialog):
@@ -71,6 +184,21 @@ class SettingsDialog(QDialog):
         self._step_hint.setObjectName("HintLabel")
         self._step_hint.setWordWrap(True)
         layout_box.addWidget(self._step_hint)
+
+        layout_box.addWidget(_divider())
+        gap_header = QHBoxLayout()
+        gap_header.setSpacing(12)
+        gap_name = QLabel("双页间距")
+        gap_name.setObjectName("CardTitle")
+        gap_header.addWidget(gap_name)
+        gap_header.addStretch(1)
+        self._gap_picker = GapPicker()
+        gap_header.addWidget(self._gap_picker)
+        layout_box.addLayout(gap_header)
+        self._gap_hint = QLabel()
+        self._gap_hint.setObjectName("HintLabel")
+        self._gap_hint.setWordWrap(True)
+        layout_box.addWidget(self._gap_hint)
         root.addWidget(layout_card)
 
         # ---- direction ---------------------------------------------------
@@ -110,7 +238,7 @@ class SettingsDialog(QDialog):
         root.addWidget(fit_card)
 
         shortcuts = QLabel(
-            "方向键翻页  ·  PageUp / PageDown  ·  滚轮翻页  ·  按住鼠标拖动平移  ·  F 切换适配"
+            "方向键翻页  ·  滚轮翻页  ·  Ctrl+滚轮缩放  ·  Ctrl+中键恢复适配  ·  拖动平移"
         )
         shortcuts.setObjectName("HintLabel")
         shortcuts.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -139,6 +267,7 @@ class SettingsDialog(QDialog):
         self._step_seg.changed.connect(self._on_step_changed)
         self._direction_seg.changed.connect(self._on_direction_changed)
         self._fit_seg.changed.connect(self._on_fit_changed)
+        self._gap_picker.changed.connect(self._on_gap_changed)
         self._sync_from_settings()
 
     # ---- initialisation --------------------------------------------------
@@ -148,6 +277,7 @@ class SettingsDialog(QDialog):
         self._step_seg.set_value(str(s.double_step))
         self._direction_seg.set_value(s.direction)
         self._fit_seg.set_value(s.fit_mode)
+        self._gap_picker.set_value(s.page_gap)
         self._update_hints()
         self._step_seg.setEnabled(s.view_mode == "double")
         self._step_hint.setEnabled(s.view_mode == "double")
@@ -157,9 +287,17 @@ class SettingsDialog(QDialog):
             self._step_hint.setText(
                 "双页浏览时，每次翻页前进或后退 1 或 2 页。"
             )
+            self._gap_hint.setText(
+                f"双页并排时两页之间的留白。可点选预设，或输入 "
+                f"{PAGE_GAP_MIN}–{PAGE_GAP_MAX} 像素后按回车；超出范围会自动调整到边界。"
+            )
         else:
             self._step_hint.setText(
                 "单页浏览固定每次翻 1 页；切换到双页后可以调整步长。"
+            )
+            self._gap_hint.setText(
+                f"当前为单页浏览，间距仅在双页模式下显示。可先设置 "
+                f"{PAGE_GAP_MIN}–{PAGE_GAP_MAX} 像素，输入后按回车确认。"
             )
         if self._settings.direction == "rtl":
             self._direction_hint.setText(
@@ -202,19 +340,30 @@ class SettingsDialog(QDialog):
         self._update_hints()
         self.settingsChanged.emit()
 
+    def _on_gap_changed(self, value: int) -> None:
+        self._settings.page_gap = value
+        self._update_hints()
+        self.settingsChanged.emit()
+
     def _reset(self) -> None:
         self._settings.view_mode = DEFAULTS["view_mode"]
         self._settings.double_step = DEFAULTS["double_step"]
         self._settings.direction = DEFAULTS["direction"]
         self._settings.fit_mode = DEFAULTS["fit_mode"]
+        self._settings.page_gap = DEFAULTS["page_gap"]
         self._view_seg.set_value(self._settings.view_mode)
         self._step_seg.set_value(str(self._settings.double_step))
         self._direction_seg.set_value(self._settings.direction)
         self._fit_seg.set_value(self._settings.fit_mode)
+        self._gap_picker.set_value(self._settings.page_gap)
         self._step_seg.setEnabled(self._settings.view_mode == "double")
         self._step_hint.setEnabled(self._settings.view_mode == "double")
         self._update_hints()
         self.settingsChanged.emit()
+
+    def accept(self) -> None:
+        self._gap_picker.commit()
+        super().accept()
 
 
 def _card() -> QFrame:

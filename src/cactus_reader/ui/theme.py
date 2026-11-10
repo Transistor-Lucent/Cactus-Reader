@@ -272,6 +272,23 @@ QToolButton#IconButton:pressed {{
 QToolButton#IconButton:disabled {{
     background: transparent;
 }}
+QToolButton#EdgeTurnButton {{
+    background: rgba(10, 13, 10, 176);
+    border: 1px solid rgba(51, 66, 52, 216);
+    border-radius: 20px;
+}}
+QToolButton#EdgeTurnButton:hover {{
+    background: rgba(29, 40, 29, 224);
+    border-color: {c['accent_deep']};
+}}
+QToolButton#EdgeTurnButton:pressed {{
+    background: rgba(79, 143, 75, 230);
+    border-color: {c['accent']};
+}}
+QToolButton#EdgeTurnButton:disabled {{
+    background: rgba(10, 13, 10, 104);
+    border-color: rgba(51, 66, 52, 120);
+}}
 QPushButton {{
     background: {c['surface_raised']};
     color: {c['text']};
@@ -358,6 +375,20 @@ QPushButton#SegmentButton:disabled {{
     color: {c['text_faint']};
     background: transparent;
 }}
+QLineEdit#GapInput {{
+    background: {c['bg']};
+    color: {c['text']};
+    border: 1px solid {c['border']};
+    border-radius: 7px;
+    padding: 5px 7px;
+    font-size: 12px;
+    font-weight: 700;
+    selection-background-color: {c['accent_deep']};
+}}
+QLineEdit#GapInput:focus {{
+    border-color: {c['accent_deep']};
+    background: {c['surface']};
+}}
 QFrame#RecentRow {{
     background: {c['surface_raised']};
     border: 1px solid {c['border']};
@@ -392,31 +423,6 @@ QFrame#EmptyRecent {{
 QLabel#EmptyRecentText {{
     color: {c['text_faint']};
     font-size: 12px;
-}}
-QSlider::groove:horizontal {{
-    height: 4px;
-    background: {c['border']};
-    border-radius: 2px;
-}}
-QSlider::sub-page:horizontal {{
-    background: {c['accent_deep']};
-    border-radius: 2px;
-}}
-QSlider::handle:horizontal {{
-    width: 13px;
-    height: 13px;
-    margin: -5px 0;
-    border-radius: 6px;
-    background: {c['text']};
-    border: 2px solid {c['accent_deep']};
-}}
-QSlider::handle:horizontal:hover {{
-    background: {c['accent_bright']};
-    border-color: {c['accent']};
-}}
-QSlider::handle:horizontal:disabled {{
-    background: {c['text_faint']};
-    border-color: {c['border_strong']};
 }}
 QScrollArea {{
     background: transparent;

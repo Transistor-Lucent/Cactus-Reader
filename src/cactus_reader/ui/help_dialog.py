@@ -45,6 +45,8 @@ _HELP_HTML = f"""
   <li><span class="key">PageDown</span> / <span class="key">Space</span> 后一页，
       <span class="key">PageUp</span> / <span class="key">Backspace</span> 前一页。</li>
   <li><span class="key">Home</span> 回到开头，<span class="key">End</span> 跳到结尾。</li>
+  <li>点击或拖动底栏进度条，画面会立即跳到对应页；拖动时也持续跟随。</li>
+  <li>进度条方向会跟随阅读方向：从右向左阅读时，右侧是已读部分。</li>
   <li>鼠标滚轮向下翻到后一页，向上翻到前一页。</li>
   <li>双页浏览时，一次翻 1 页或 2 页由「阅读设置 → 双页翻页步长」决定。</li>
 </ul>
@@ -52,13 +54,18 @@ _HELP_HTML = f"""
 <h2>画面</h2>
 <ul>
   <li><span class="key">F</span> 在「铺满高度」和「铺满宽度」之间切换。</li>
+  <li><span class="key">Ctrl</span> + 鼠标滚轮向上放大、向下缩小；
+      <span class="key">Ctrl</span> + 鼠标中键恢复到当前铺满模式的 100% 大小。</li>
   <li>画面超出窗口时，按住鼠标左键拖动即可平移。</li>
+  <li>全屏时，把鼠标移到画面左侧或右侧边缘中部的翻页按钮附近，按钮才会浮现；
+      点击即可按当前阅读方向向左或向右翻一页。鼠标离开按钮周围后按钮自动隐藏。</li>
   <li><span class="key">F11</span> 或双击画面进入 / 退出全屏，<span class="key">Esc</span> 退出全屏。</li>
 </ul>
 
 <h2>设置</h2>
 <ul>
-  <li><span class="key">Ctrl+,</span> 打开阅读设置：单页 / 双页、翻页步长、阅读方向、页面适配。</li>
+  <li><span class="key">Ctrl+,</span> 打开阅读设置：单页 / 双页、翻页步长、双页间距、阅读方向、页面适配。</li>
+  <li>双页间距可选择预设，也可输入 0–200 像素的自定义值；按回车确认。</li>
   <li>所有设置自动保存。复制整个 CactusReader 文件夹，即可连同设置和阅读记录一起迁移；
       如果程序目录不可写，则保存到当前用户的本地配置目录。</li>
 </ul>

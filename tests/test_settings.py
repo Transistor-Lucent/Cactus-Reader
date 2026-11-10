@@ -7,7 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from cactus_reader.settings import DEFAULTS, Settings
+from cactus_reader.settings import (
+    DEFAULT_PAGE_GAP,
+    DEFAULTS,
+    PAGE_GAP_MAX,
+    Settings,
+    clamp_page_gap,
+)
 
 
 class SettingsTests(unittest.TestCase):
@@ -24,6 +30,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.double_step, 2)
         self.assertEqual(settings.direction, "ltr")
         self.assertEqual(settings.fit_mode, "height")
+        self.assertEqual(settings.page_gap, DEFAULT_PAGE_GAP)
         self.assertEqual(settings.effective_step, 2)
 
     def test_effective_step_in_single_mode(self) -> None:
@@ -37,10 +44,15 @@ class SettingsTests(unittest.TestCase):
         settings.direction = "up"
         settings.fit_mode = "stretch"
         settings.double_step = 7
+        settings.page_gap = 999
         self.assertEqual(settings.view_mode, "double")
         self.assertEqual(settings.direction, "ltr")
         self.assertEqual(settings.fit_mode, "height")
         self.assertEqual(settings.double_step, 1)
+        self.assertEqual(settings.page_gap, PAGE_GAP_MAX)
+        settings.page_gap = -4
+        self.assertEqual(settings.page_gap, 0)
+        self.assertEqual(clamp_page_gap("bad"), DEFAULT_PAGE_GAP)
 
     def test_round_trip_with_unicode(self) -> None:
         settings = Settings(self.path)
@@ -48,6 +60,7 @@ class SettingsTests(unittest.TestCase):
         settings.direction = "rtl"
         settings.fit_mode = "width"
         settings.double_step = 1
+        settings.page_gap = 18
         settings.touch_recent(
             r"C:\漫画\仙人掌.epub", "仙人掌漫画", "某作者", "epub", 4, 20
         )
@@ -61,6 +74,7 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(loaded.direction, "rtl")
         self.assertEqual(loaded.fit_mode, "width")
         self.assertEqual(loaded.double_step, 1)
+        self.assertEqual(loaded.page_gap, 18)
         self.assertEqual(loaded.data["recent"][0]["page"], 4)
         self.assertEqual(loaded.data["recent"][0]["total"], 20)
 

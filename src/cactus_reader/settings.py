@@ -15,6 +15,10 @@ from .paths import choose_settings_path
 VIEW_MODES = ("single", "double")
 DIRECTIONS = ("ltr", "rtl")
 FIT_MODES = ("height", "width")
+PAGE_GAP_MIN = 0
+PAGE_GAP_MAX = 200
+PAGE_GAP_PRESETS = (0, 6, 12, 24)
+DEFAULT_PAGE_GAP = 6
 MAX_RECENT = 10
 
 DEFAULTS: dict[str, Any] = {
@@ -23,6 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "double_step": 2,
     "direction": "ltr",
     "fit_mode": "height",
+    "page_gap": DEFAULT_PAGE_GAP,
     "window": {
         "x": None,
         "y": None,
@@ -62,7 +67,10 @@ class Settings:
             raw = {}
 
         data = copy.deepcopy(DEFAULTS)
-        for key in ("view_mode", "double_step", "direction", "fit_mode", "last_dir"):
+        for key in (
+            "view_mode", "double_step", "direction", "fit_mode",
+            "page_gap", "last_dir",
+        ):
             if key in raw:
                 data[key] = raw[key]
         window = raw.get("window")
@@ -96,6 +104,7 @@ class Settings:
         if data["fit_mode"] not in FIT_MODES:
             data["fit_mode"] = DEFAULTS["fit_mode"]
         data["double_step"] = 2 if _safe_int(data.get("double_step"), 2) == 2 else 1
+        data["page_gap"] = clamp_page_gap(data.get("page_gap"))
         self.data = data
 
     def save(self) -> None:
@@ -148,6 +157,14 @@ class Settings:
     @fit_mode.setter
     def fit_mode(self, value: str) -> None:
         self.data["fit_mode"] = value if value in FIT_MODES else "height"
+
+    @property
+    def page_gap(self) -> int:
+        return clamp_page_gap(self.data.get("page_gap"))
+
+    @page_gap.setter
+    def page_gap(self, value: int) -> None:
+        self.data["page_gap"] = clamp_page_gap(value)
 
     @property
     def effective_step(self) -> int:
@@ -220,6 +237,15 @@ class Settings:
 
     def clear_recent(self) -> None:
         self.data["recent"] = []
+
+
+def clamp_page_gap(value: Any) -> int:
+    """Return a valid double-page gap, clamping numeric input to its range."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_PAGE_GAP
+    return max(PAGE_GAP_MIN, min(PAGE_GAP_MAX, number))
 
 
 def _safe_int(value: Any, default: int) -> int:

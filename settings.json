@@ -4,6 +4,7 @@
   "double_step": 2,
   "direction": "rtl",
   "fit_mode": "height",
+  "page_gap": 6,
   "window": {
     "x": 340,
     "y": 106,
@@ -18,9 +19,9 @@
       "title": "citrus~柑橘味香氣~ - 卷01",
       "author": "サブロウタ",
       "format": "EPUB",
-      "page": 64,
+      "page": 70,
       "total": 170,
-      "opened_at": "2026-11-09T13:54:48+00:00"
+      "opened_at": "2026-11-10T03:18:17+00:00"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -70,6 +71,184 @@ class IconButton(QToolButton):
 
     def set_icon(self, icon_name: str, color: str | None = None) -> None:
         self.setIcon(icon(icon_name, color, self.iconSize().width()))
+
+
+class EdgeTurnButton(QToolButton):
+    """A large translucent page-turn button for fullscreen reading.
+
+    The button only owns its look; the main window decides when it is shown,
+    so it can appear exclusively inside its edge tenth of the screen.
+    """
+
+    WIDTH = 54
+    HEIGHT = 96
+
+    def __init__(self, icon_name: str, tooltip: str = "",
+                 parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("EdgeTurnButton")
+        self.setIcon(icon(icon_name, COLORS["text"], 26))
+        self.setIconSize(QSize(26, 26))
+        self.setFixedSize(self.WIDTH, self.HEIGHT)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        # Keep keyboard focus on the reader; arrows and Space keep working.
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setToolTip(tooltip)
+
+
+class PageSlider(QSlider):
+    """A page slider that paints its progress in the reading direction.
+
+    The value always means the page index.  Only the visual fill and the
+    mapping from pointer position to value are mirrored for right-to-left
+    books.  Pressing anywhere jumps to that page immediately, and dragging
+    keeps reporting values while the pointer is still down.
+    """
+
+    _TRACK_MARGIN = 9.0
+    _TRACK_HEIGHT = 4.0
+    _HANDLE_RADIUS = 6.5
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setObjectName("PageSlider")
+        self.setTracking(True)
+        self.setSingleStep(1)
+        self.setPageStep(2)
+        self.setFixedHeight(24)
+        self.setMinimumWidth(80)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover, True)
+        self.setAccessibleName("阅读进度条")
+        self._rtl = False
+
+    def set_rtl(self, rtl: bool) -> None:
+        rtl = bool(rtl)
+        if rtl != self._rtl:
+            self._rtl = rtl
+            self.update()
+
+    @property
+    def rtl(self) -> bool:
+        return self._rtl
+
+    def _track_rect(self) -> QRectF:
+        top = (self.height() - self._TRACK_HEIGHT) / 2.0
+        width = max(1.0, self.width() - 2.0 * self._TRACK_MARGIN)
+        return QRectF(self._TRACK_MARGIN, top, width, self._TRACK_HEIGHT)
+
+    def _fraction(self) -> float:
+        span = self.maximum() - self.minimum()
+        if span <= 0:
+            return 0.0
+        return (self.value() - self.minimum()) / span
+
+    def _handle_x(self) -> float:
+        track = self._track_rect()
+        fraction = self._fraction()
+        if self._rtl:
+            return track.right() - fraction * track.width()
+        return track.left() + fraction * track.width()
+
+    def _value_from_x(self, x: float) -> int:
+        track = self._track_rect()
+        fraction = (float(x) - track.left()) / max(1.0, track.width())
+        fraction = max(0.0, min(1.0, fraction))
+        if self._rtl:
+            fraction = 1.0 - fraction
+        span = self.maximum() - self.minimum()
+        return self.minimum() + int(round(fraction * span))
+
+    # ---- painting --------------------------------------------------------
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        track = self._track_rect()
+
+        enabled = self.isEnabled()
+        groove = (
+            COLORS["border_strong"]
+            if self.underMouse() and enabled
+            else COLORS["border"]
+        )
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(groove))
+        painter.drawRoundedRect(track, 2.0, 2.0)
+
+        fraction = self._fraction()
+        if fraction > 0.0 and enabled:
+            handle_x = self._handle_x()
+            if self._rtl:
+                fill = QRectF(
+                    handle_x, track.top(),
+                    track.right() - handle_x, track.height(),
+                )
+            else:
+                fill = QRectF(
+                    track.left(), track.top(),
+                    handle_x - track.left(), track.height(),
+                )
+            if fill.width() > 0.4:
+                painter.setBrush(QColor(COLORS["accent_deep"]))
+                painter.drawRoundedRect(fill, 2.0, 2.0)
+
+        handle_x = self._handle_x()
+        if not enabled:
+            handle_fill = QColor(COLORS["text_faint"])
+            handle_border = QColor(COLORS["border_strong"])
+        elif self.underMouse() or self.hasFocus():
+            handle_fill = QColor(COLORS["accent_bright"])
+            handle_border = QColor(COLORS["accent"])
+        else:
+            handle_fill = QColor(COLORS["text"])
+            handle_border = QColor(COLORS["accent_deep"])
+        painter.setBrush(handle_fill)
+        painter.setPen(QPen(handle_border, 2.0))
+        painter.drawEllipse(
+            QPointF(handle_x, track.center().y()),
+            self._HANDLE_RADIUS,
+            self._HANDLE_RADIUS,
+        )
+
+    # ---- interaction -----------------------------------------------------
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        if (
+            event.button() == Qt.MouseButton.LeftButton
+            and self.isEnabled()
+            and self.maximum() > self.minimum()
+        ):
+            self.setFocus(Qt.FocusReason.MouseFocusReason)
+            self.setSliderDown(True)
+            self.setValue(self._value_from_x(event.position().x()))
+            self.update()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:  # noqa: N802
+        if self.isSliderDown() and self.isEnabled():
+            self.setValue(self._value_from_x(event.position().x()))
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self.isSliderDown():
+            self.setValue(self._value_from_x(event.position().x()))
+            self.setSliderDown(False)
+            self.update()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+    def enterEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802
+        self.update()
+        super().leaveEvent(event)
 
 
 def logo_pixmap(size: int) -> QPixmap:
@@ -153,6 +332,12 @@ class SegmentedControl(QFrame):
             found = found or checked
         if found:
             self._value = value
+
+    def button(self, value: str) -> QPushButton | None:
+        for option, button in self._buttons:
+            if option == value:
+                return button
+        return None
 
 
 class RecentRow(QFrame):

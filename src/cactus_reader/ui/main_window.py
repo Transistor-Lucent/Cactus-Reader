@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QGuiApplication, QIcon, QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer
+from PySide6.QtGui import QCursor, QGuiApplication, QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractButton,
     QApplication,
@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QSlider,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -32,8 +31,10 @@ from .settings_dialog import SettingsDialog
 from .theme import COLORS, app_icon, icon
 from .widgets import (
     DropOverlay,
+    EdgeTurnButton,
     ElidedLabel,
     IconButton,
+    PageSlider,
     Toast,
     logo_pixmap,
     vertical_divider,
@@ -49,6 +50,10 @@ _FILE_FILTER = (
 
 
 class MainWindow(QMainWindow):
+    # How far around a fullscreen edge button the pointer can be and still
+    # reveal it.
+    _EDGE_HOVER_PAD = 56
+
     def __init__(self, settings: Settings) -> None:
         super().__init__()
         self.settings = settings
@@ -66,6 +71,13 @@ class MainWindow(QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(1200)
         self._save_timer.timeout.connect(self._save_settings)
+
+        # Polls the pointer while fullscreen so the edge buttons appear as
+        # soon as the mouse approaches them, even while it rests over another
+        # widget.
+        self._edge_timer = QTimer(self)
+        self._edge_timer.setInterval(50)
+        self._edge_timer.timeout.connect(self._update_edge_buttons)
 
         self._build_ui()
         self._build_shortcuts()
@@ -150,6 +162,7 @@ class MainWindow(QMainWindow):
         self._reader.positionChanged.connect(self._on_position_changed)
         self._reader.fullscreenRequested.connect(self.toggle_fullscreen)
         self._reader.boundaryReached.connect(self._on_boundary)
+        self._reader.zoomChanged.connect(self._on_zoom_changed)
 
         # Footer ---------------------------------------------------------
         self._footer = QFrame()
@@ -163,13 +176,10 @@ class MainWindow(QMainWindow):
         self._left_button.clicked.connect(self._left_action)
         footer_box.addWidget(self._left_button)
 
-        self._slider = QSlider(Qt.Orientation.Horizontal)
+        self._slider = PageSlider()
         self._slider.setMinimum(0)
         self._slider.setMaximum(0)
-        self._slider.setSingleStep(1)
-        self._slider.setPageStep(2)
-        self._slider.setTracking(False)
-        self._slider.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._slider.setToolTip("点击或拖动到任意位置，立即跳转到对应页面")
         self._slider.valueChanged.connect(self._on_slider)
         footer_box.addWidget(self._slider, 1)
 
@@ -214,6 +224,20 @@ class MainWindow(QMainWindow):
 
         self._overlay = DropOverlay(central)
         self._toast = Toast(central)
+
+        # Fullscreen edge page-turn keys.  They live above the reader and are
+        # shown one at a time while the pointer is around that button.
+        self._edge_left_button = EdgeTurnButton(
+            "chevron-left", "上一页（←）", central
+        )
+        self._edge_left_button.clicked.connect(self._left_action)
+        self._edge_left_button.hide()
+        self._edge_right_button = EdgeTurnButton(
+            "chevron-right", "下一页（→）", central
+        )
+        self._edge_right_button.clicked.connect(self._right_action)
+        self._edge_right_button.hide()
+        self._position_edge_buttons()
 
     def _build_shortcuts(self) -> None:
         bindings = [
@@ -288,6 +312,9 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._overlay.setGeometry(self._central.rect())
         self._toast.reposition()
+        if hasattr(self, "_edge_left_button"):
+            self._position_edge_buttons()
+            self._update_edge_buttons()
 
     # ---- book lifecycle --------------------------------------------------
     def open_dialog(self) -> None:
@@ -430,6 +457,7 @@ class MainWindow(QMainWindow):
             step=self.settings.effective_step,
             rtl=self.settings.direction == "rtl",
         )
+        self._reader.set_page_gap(self.settings.page_gap)
         self._reader.set_fit_mode(self.settings.fit_mode)
         self._sync_controls()
         self._save_timer.start()
@@ -448,6 +476,7 @@ class MainWindow(QMainWindow):
     def _sync_controls(self) -> None:
         has_book = self._book is not None
         count = self._reader.page_count
+        self._slider.set_rtl(self.settings.direction == "rtl")
         self._slider.blockSignals(True)
         self._slider.setRange(0, max(0, count - 1))
         self._slider.setValue(self._reader.current_page)
@@ -494,6 +523,85 @@ class MainWindow(QMainWindow):
             self._direction_button.setIcon(QIcon())
             self._direction_button.setToolTip("从左向右阅读：右键翻到后一页，点击切换为从右向左")
 
+        # The fullscreen edge buttons mirror the footer arrows.
+        self._edge_left_button.setEnabled(has_book and left_enabled)
+        self._edge_right_button.setEnabled(has_book and right_enabled)
+        self._edge_left_button.setToolTip(
+            "下一页（←）" if rtl else "上一页（←）"
+        )
+        self._edge_right_button.setToolTip(
+            "上一页（→）" if rtl else "下一页（→）"
+        )
+        self._position_edge_buttons()
+        self._update_edge_buttons()
+        if self._fullscreen and has_book:
+            if not self._edge_timer.isActive():
+                self._edge_timer.start()
+        elif self._edge_timer.isActive():
+            self._edge_timer.stop()
+
+    # ---- fullscreen edge page-turn keys ---------------------------------
+    def _position_edge_buttons(self) -> None:
+        if not hasattr(self, "_edge_left_button"):
+            return
+        area = self._central.rect()
+        tenth = max(1.0, area.width() / 10.0)
+        margin = 16
+        # Keep the whole button inside its trigger tenth on narrow screens.
+        if tenth < margin + self._edge_left_button.width() + 4:
+            margin = max(4, int(tenth - self._edge_left_button.width() - 4))
+        y = max(
+            area.y(),
+            area.y() + (area.height() - self._edge_left_button.height()) // 2,
+        )
+        self._edge_left_button.move(area.x() + margin, y)
+        self._edge_right_button.move(
+            area.x() + area.width() - margin - self._edge_right_button.width(), y
+        )
+
+    def _update_edge_buttons(self, local_pos: QPoint | None = None) -> None:
+        """Reveal a button only while the pointer is around that button.
+
+        ``local_pos`` uses the central widget's coordinates; when omitted the
+        live cursor position is used, which is what the polling timer needs.
+        """
+        if not self._fullscreen or self._book is None:
+            self._hide_edge_buttons()
+            return
+        if self._overlay.isVisible() or QApplication.activeModalWidget() is not None:
+            self._hide_edge_buttons()
+            return
+        if local_pos is None:
+            local_pos = self._central.mapFromGlobal(QCursor.pos())
+        if not self._central.rect().contains(local_pos):
+            self._hide_edge_buttons()
+            return
+        self._set_edge_button_visible(
+            self._edge_left_button,
+            self._edge_hover_zone(self._edge_left_button).contains(local_pos),
+        )
+        self._set_edge_button_visible(
+            self._edge_right_button,
+            self._edge_hover_zone(self._edge_right_button).contains(local_pos),
+        )
+
+    def _edge_hover_zone(self, button) -> QRect:
+        pad = self._EDGE_HOVER_PAD
+        return button.geometry().adjusted(-pad, -pad, pad, pad)
+
+    @staticmethod
+    def _set_edge_button_visible(button, visible: bool) -> None:
+        if visible:
+            if not button.isVisible():
+                button.show()
+                button.raise_()
+        elif button.isVisible():
+            button.hide()
+
+    def _hide_edge_buttons(self) -> None:
+        self._edge_left_button.hide()
+        self._edge_right_button.hide()
+
     def _update_header_for_book(self) -> None:
         if self._book is None:
             self._header_title.setText("Cactus Reader")
@@ -515,6 +623,15 @@ class MainWindow(QMainWindow):
         self._toast.show_message(
             "已经是最后一页" if where == "end" else "已经是第一页", 1200
         )
+
+    def _on_zoom_changed(self, factor: float) -> None:
+        if abs(factor - 1.0) < 1e-6:
+            mode = "铺满高度" if self.settings.fit_mode == "height" else "铺满宽度"
+            self._toast.show_message(f"已恢复{mode}（100%）", 1400)
+        else:
+            self._toast.show_message(
+                f"缩放 {int(round(factor * 100))}%  ·  Ctrl+中键恢复", 1400
+            )
 
     # ---- navigation actions ---------------------------------------------
     def _left_action(self) -> None:
@@ -602,9 +719,15 @@ class MainWindow(QMainWindow):
             self._header.hide()
             self._footer.hide()
             self._sync_full_button()
+            self._position_edge_buttons()
+            if self._book is not None and not self._edge_timer.isActive():
+                self._edge_timer.start()
+            self._update_edge_buttons()
             self._toast.show_message("按 F11 或 Esc 退出全屏", 2000)
         else:
             self._fullscreen = False
+            self._edge_timer.stop()
+            self._hide_edge_buttons()
             if self._was_maximized:
                 self.showMaximized()
             else:
@@ -632,6 +755,14 @@ class MainWindow(QMainWindow):
 
     # ---- keyboard --------------------------------------------------------
     def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if (
+            event.type() == QEvent.Type.Wheel
+            and watched in (self._edge_left_button, self._edge_right_button)
+            and self._book is not None
+        ):
+            # Scrolling while hovering an edge button still turns pages.
+            QApplication.sendEvent(self._reader, event)
+            return True
         if (
             event.type() == QEvent.Type.KeyPress
             and self._book is not None
@@ -712,6 +843,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self._save_timer.stop()
+        self._edge_timer.stop()
         self._remember_position()
         self._save_geometry()
         self.settings.save()
