@@ -138,6 +138,102 @@ class ReaderInteractionTests(unittest.TestCase):
         QTest.keyClick(self.window, Qt.Key.Key_F)
         self.assertEqual(self.settings.fit_mode, "width")
 
+    def test_shift_arrows_use_the_alternate_double_page_step(self) -> None:
+        self.settings.direction = "ltr"
+        self.settings.view_mode = "double"
+        self.settings.double_step = 2
+        self._apply()
+        self.window.show()
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+
+        # Configured step 2 -> Shift+arrow moves a single page.
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 1)
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 0)
+
+        # Configured step 1 -> Shift+arrow moves two pages.
+        self.settings.double_step = 1
+        self._apply()
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 2)
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 0)
+
+        # Single-page mode keeps its normal behaviour.
+        self.settings.view_mode = "single"
+        self.settings.double_step = 2
+        self._apply()
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 1)
+
+    def test_shift_arrows_follow_the_reading_direction(self) -> None:
+        self.settings.direction = "rtl"
+        self.settings.view_mode = "double"
+        self.settings.double_step = 2
+        self._apply()
+        self.window.show()
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+
+        # A physical left arrow moves forward in right-to-left reading, but
+        # still uses the alternate one-page step.
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Left, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 1)
+        QTest.keyClick(
+            self.window, Qt.Key.Key_Right, Qt.KeyboardModifier.ShiftModifier
+        )
+        self.assertEqual(self.reader.current_page, 0)
+
+    def test_ctrl_arrows_rotate_windowed_and_fullscreen(self) -> None:
+        self.window.show()
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+
+        # Counter-clockwise and clockwise keep their physical meaning even
+        # while the slider owns the focus.
+        self.window._slider.setFocus()
+        QTest.keyClick(
+            self.window._slider, Qt.Key.Key_Left,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.assertEqual(self.reader.rotation, 270)
+        QTest.keyClick(
+            self.window._slider, Qt.Key.Key_Right,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.assertEqual(self.reader.rotation, 0)
+
+        self.window.toggle_fullscreen()
+        self.app.processEvents()
+        self.assertTrue(self.window._fullscreen)
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+        QTest.keyClick(
+            self.window._reader, Qt.Key.Key_Left,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.assertEqual(self.reader.rotation, 270)
+        QTest.keyClick(
+            self.window._reader, Qt.Key.Key_Right,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+        self.assertEqual(self.reader.rotation, 0)
+        self.window.toggle_fullscreen()
+
 
 if __name__ == "__main__":
     unittest.main()

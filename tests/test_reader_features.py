@@ -18,6 +18,9 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from cactus_reader.settings import (  # noqa: E402
+    DEFAULT_HIDE_CURSOR_DELAY,
+    HIDE_CURSOR_MAX,
+    HIDE_CURSOR_MIN,
     PAGE_GAP_MAX,
     Settings,
 )
@@ -155,6 +158,127 @@ class ReaderFeatureTests(unittest.TestCase):
         right_page = self.reader._entries[1][1]
         left_page = self.reader._entries[0][1]
         self.assertAlmostEqual(right_page.left() - left_page.right(), 48.0, delta=0.01)
+
+    def test_rotation_swaps_page_orientation(self) -> None:
+        self.reader.resize(800, 600)
+        self.reader.set_config(two_page=False, step=1, rtl=False)
+        self.reader.set_fit_mode("height")
+        self.reader._rebuild_layout()
+        upright = self.reader._entries[0][1]
+        self.assertLess(upright.width(), upright.height())
+
+        self.assertTrue(self.reader.rotate_cw())
+        self.assertEqual(self.reader.rotation, 90)
+        self.reader._rebuild_layout()
+        turned = self.reader._entries[0][1]
+        self.assertGreater(turned.width(), turned.height())
+        self.assertAlmostEqual(turned.height(), self.reader.height(), delta=1)
+
+        pixmap = self.reader._pixmap_for(0, turned)
+        self.assertIsNotNone(pixmap)
+        assert pixmap is not None
+        self.assertGreater(pixmap.width(), pixmap.height())
+
+        self.reader.rotate_cw()
+        self.assertEqual(self.reader.rotation, 180)
+        self.reader.rotate_ccw()
+        self.assertEqual(self.reader.rotation, 90)
+        self.reader.rotate_ccw()
+        self.assertEqual(self.reader.rotation, 0)
+
+    def test_rotation_keeps_spread_left_right_order(self) -> None:
+        self.reader.resize(1000, 600)
+        self.reader.set_fit_mode("height")
+        self.reader.set_config(two_page=True, step=2, rtl=False)
+        self.reader._rebuild_layout()
+        self.assertEqual([index for index, _ in self.reader._entries], [0, 1])
+
+        self.reader.rotate_cw()
+        self.reader._rebuild_layout()
+        self.assertEqual([index for index, _ in self.reader._entries], [0, 1])
+        left, right = self.reader._entries
+        self.assertEqual(left[0], 0)
+        self.assertEqual(right[0], 1)
+        self.assertLess(left[1].center().x(), right[1].center().x())
+
+        self.reader.set_config(two_page=True, step=2, rtl=True)
+        self.reader._rebuild_layout()
+        self.assertEqual([index for index, _ in self.reader._entries], [1, 0])
+        self.reader.rotate_ccw()
+        self.reader._rebuild_layout()
+        self.assertEqual([index for index, _ in self.reader._entries], [1, 0])
+        left, right = self.reader._entries
+        self.assertEqual(left[0], 1)
+        self.assertEqual(right[0], 0)
+        self.assertLess(left[1].center().x(), right[1].center().x())
+
+    def test_rotation_switches_fit_mode_unless_disabled(self) -> None:
+        self.settings.fit_mode = "height"
+        self.settings.rotate_switches_fit = True
+        self.window._apply_reading_settings()
+
+        self.window.rotate_cw()
+        self.assertEqual(self.reader.rotation, 90)
+        self.assertEqual(self.settings.fit_mode, "width")
+        self.assertEqual(self.reader._fit, "width")
+
+        self.window.rotate_ccw()
+        self.assertEqual(self.reader.rotation, 0)
+        self.assertEqual(self.settings.fit_mode, "height")
+        self.assertEqual(self.reader._fit, "height")
+
+        self.settings.rotate_switches_fit = False
+        self.window.rotate_cw()
+        self.assertEqual(self.reader.rotation, 90)
+        self.assertEqual(self.settings.fit_mode, "height")
+        self.assertEqual(self.reader._fit, "height")
+
+        self.window.rotate_ccw()
+        self.assertEqual(self.reader.rotation, 0)
+        self.assertEqual(self.settings.fit_mode, "height")
+
+    def test_rotate_fit_switch_control_updates_settings(self) -> None:
+        dialog = SettingsDialog(self.settings)
+        self.assertEqual(dialog._rotate_fit_seg.value(), "on")
+        off_button = dialog._rotate_fit_seg.button("off")
+        self.assertIsNotNone(off_button)
+        assert off_button is not None
+        off_button.click()
+        self.assertFalse(self.settings.rotate_switches_fit)
+
+        dialog._reset()
+        self.assertTrue(self.settings.rotate_switches_fit)
+        self.assertEqual(dialog._rotate_fit_seg.value(), "on")
+        dialog.close()
+
+    def test_progress_slider_has_no_hover_tooltip(self) -> None:
+        self.assertEqual(self.slider.toolTip(), "")
+
+    def test_hide_cursor_delay_picker_clamps_and_resets(self) -> None:
+        dialog = SettingsDialog(self.settings)
+        picker = dialog._hide_cursor_picker
+        picker._input.setText("99")
+        picker.commit()
+        self.assertEqual(self.settings.hide_cursor_delay, HIDE_CURSOR_MAX)
+        self.assertEqual(picker.value(), HIDE_CURSOR_MAX)
+        self.assertEqual(picker._input.text(), str(HIDE_CURSOR_MAX))
+
+        picker._input.setText("0")
+        picker.commit()
+        self.assertEqual(self.settings.hide_cursor_delay, HIDE_CURSOR_MIN)
+        self.assertEqual(picker._input.text(), str(HIDE_CURSOR_MIN))
+
+        picker._input.setText("7")
+        picker.commit()
+        self.assertEqual(self.settings.hide_cursor_delay, 7)
+        self.assertEqual(picker.value(), 7)
+
+        dialog._reset()
+        self.assertEqual(
+            self.settings.hide_cursor_delay, DEFAULT_HIDE_CURSOR_DELAY
+        )
+        self.assertEqual(picker.value(), DEFAULT_HIDE_CURSOR_DELAY)
+        dialog.close()
 
     def test_gap_input_is_numeric_and_clamps_on_enter(self) -> None:
         dialog = SettingsDialog(self.settings)

@@ -6,7 +6,7 @@ import math
 from collections import OrderedDict
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap, QTransform
 from PySide6.QtWidgets import QWidget
 
 from ..book import Book
@@ -53,17 +53,24 @@ class ReaderView(QWidget):
         self._fit = "height"
         self._page_gap = 6
         self._zoom = _ZOOM_DEFAULT
+        # Clockwise viewing rotation in degrees: 0, 90, 180 or 270.  Each
+        # page is rotated around its own centre so a spread keeps its
+        # left/right page order.
+        self._rotation = 0
 
         self._pan = QPointF(0.0, 0.0)
         self._content_size = QSize(0, 0)
         self._entries: list[tuple[int, QRectF]] = []
-        self._cache: OrderedDict[tuple[int, int, int], QPixmap] = OrderedDict()
+        self._cache: OrderedDict[tuple[int, int, int, int], QPixmap] = OrderedDict()
         self._errors: dict[int, str] = {}
 
         self._dragging = False
         self._drag_start = QPoint()
         self._drag_pan = QPointF()
         self._wheel_accum = 0
+        # Set by the main window while fullscreen idle.  The widget keeps its
+        # normal cursor shape underneath so showing it again is instant.
+        self._cursor_hidden = False
 
     # ---- public API ------------------------------------------------------
     @property
@@ -86,12 +93,18 @@ class ReaderView(QWidget):
     def zoom_factor(self) -> float:
         return self._zoom
 
+    @property
+    def rotation(self) -> int:
+        """Clockwise viewing rotation in degrees (0, 90, 180 or 270)."""
+        return self._rotation
+
     def set_book(self, book: Book | None, start_page: int = 0) -> None:
         self._book = book
         self._cache.clear()
         self._errors.clear()
         self._pan = QPointF(0.0, 0.0)
         self._zoom = _ZOOM_DEFAULT
+        self._rotation = 0
         if book is not None and book.page_count:
             self._current = max(0, min(int(start_page), book.page_count - 1))
         else:
@@ -153,6 +166,38 @@ class ReaderView(QWidget):
         self._apply_zoom(_ZOOM_DEFAULT)
         return True
 
+    # ---- rotation --------------------------------------------------------
+    def rotate_cw(self) -> bool:
+        """Rotate every page 90° clockwise in place."""
+        return self._set_rotation(self._rotation + 90)
+
+    def rotate_ccw(self) -> bool:
+        """Rotate every page 90° counter-clockwise in place."""
+        return self._set_rotation(self._rotation - 90)
+
+    def _set_rotation(self, angle: int) -> bool:
+        if self._book is None or self._book.page_count <= 0:
+            return False
+        angle = int(angle) % 360
+        if angle == self._rotation:
+            return False
+        self._rotation = angle
+        # Cached pixmaps belong to the previous orientation, and the old pan
+        # bounds no longer describe the page.
+        self._cache.clear()
+        self._pan = QPointF(0.0, 0.0)
+        self._refresh_cursor()
+        self.update()
+        return True
+
+    def set_cursor_hidden(self, hidden: bool) -> None:
+        """Hide or restore the mouse cursor without changing its resting shape."""
+        hidden = bool(hidden)
+        if hidden == self._cursor_hidden:
+            return
+        self._cursor_hidden = hidden
+        self._refresh_cursor()
+
     def _apply_zoom(self, level: float) -> None:
         level = max(_ZOOM_LEVELS[0], min(_ZOOM_LEVELS[-1], float(level)))
         if abs(level - self._zoom) < 1e-6:
@@ -175,26 +220,32 @@ class ReaderView(QWidget):
         self.update()
         self.positionChanged.emit(target)
 
-    def forward(self) -> None:
+    def forward(self, step: int | None = None) -> None:
         if self._book is None or self._book.page_count <= 0:
             return
-        step = self._step if self._two_page else 1
         if not can_turn_forward(self._current, self._book.page_count, self._two_page):
             self.boundaryReached.emit("end")
             return
         target = turn_forward(
-            self._current, self._book.page_count, self._two_page, step
+            self._current,
+            self._book.page_count,
+            self._two_page,
+            self._step if step is None else step,
         )
         self._turn_to(target)
 
-    def back(self) -> None:
+    def back(self, step: int | None = None) -> None:
         if self._book is None or self._book.page_count <= 0:
             return
         if not can_turn_back(self._current):
             self.boundaryReached.emit("start")
             return
-        step = self._step if self._two_page else 1
-        target = turn_back(self._current, self._book.page_count, self._two_page, step)
+        target = turn_back(
+            self._current,
+            self._book.page_count,
+            self._two_page,
+            self._step if step is None else step,
+        )
         self._turn_to(target)
 
     def first(self) -> None:
@@ -258,10 +309,7 @@ class ReaderView(QWidget):
 
         # In right-to-left spreads the earlier page sits on the right.
         visual = list(reversed(indices)) if self._two_page and self._rtl else list(indices)
-        aspects = [
-            max(0.02, min(50.0, self._book.pages[index].aspect))
-            for index in visual
-        ]
+        aspects = [self._display_aspect(index) for index in visual]
 
         if self._fit == "height":
             box_height = float(height) * zoom
@@ -285,6 +333,13 @@ class ReaderView(QWidget):
         self._content_size = QSize(
             max(1, int(round(total_width))), max(1, int(round(max_height)))
         )
+
+    def _display_aspect(self, index: int) -> float:
+        """Page aspect as seen after the current viewing rotation."""
+        aspect = max(0.02, min(50.0, self._book.pages[index].aspect))
+        if self._rotation in (90, 270):
+            aspect = 1.0 / aspect
+        return max(0.02, min(50.0, aspect))
 
     def _origin(self) -> QPointF:
         width = self.width()
@@ -368,15 +423,19 @@ class ReaderView(QWidget):
             target_w = max(64, int(target_w * factor))
             target_h = max(64, int(target_h * factor))
 
-        key = (index, target_w, target_h)
+        key = (index, target_w, target_h, self._rotation)
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)
             return cached
 
         page = self._book.pages[index]
+        # For quarter turns the decoded page is loaded with its dimensions
+        # swapped; rotating it afterwards fills the on-screen target box.
+        quarter_turn = self._rotation in (90, 270)
+        load_w, load_h = (target_h, target_w) if quarter_turn else (target_w, target_h)
         try:
-            image = page.source.load_image(QSize(target_w, target_h))
+            image = page.source.load_image(QSize(load_w, load_h))
         except Exception as exc:  # a single bad page must not kill the reader
             self._errors[index] = "此页无法显示"
             from ..book import log
@@ -386,6 +445,12 @@ class ReaderView(QWidget):
         if image.isNull():
             self._errors[index] = "此页无法显示"
             return None
+        if self._rotation:
+            transform = QTransform()
+            transform.rotate(self._rotation)
+            image = image.transformed(
+                transform, Qt.TransformationMode.FastTransformation
+            )
         self._errors.pop(index, None)
         pixmap = QPixmap.fromImage(image)
         self._cache[key] = pixmap
@@ -411,7 +476,11 @@ class ReaderView(QWidget):
             self._dragging = True
             self._drag_start = event.position().toPoint()
             self._drag_pan = QPointF(self._pan)
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            self.setCursor(
+                Qt.CursorShape.BlankCursor
+                if self._cursor_hidden
+                else Qt.CursorShape.ClosedHandCursor
+            )
             event.accept()
             return
         super().mousePressEvent(event)
@@ -476,12 +545,20 @@ class ReaderView(QWidget):
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:  # noqa: N802
-        if not self._dragging:
+        if not self._dragging and not self._cursor_hidden:
             self.setCursor(Qt.CursorShape.ArrowCursor)
         super().leaveEvent(event)
 
     def _refresh_cursor(self) -> None:
         if self._dragging:
+            self.setCursor(
+                Qt.CursorShape.BlankCursor
+                if self._cursor_hidden
+                else Qt.CursorShape.ClosedHandCursor
+            )
+            return
+        if self._cursor_hidden:
+            self.setCursor(Qt.CursorShape.BlankCursor)
             return
         if self._book is not None and self.has_overflow():
             self.setCursor(Qt.CursorShape.OpenHandCursor)

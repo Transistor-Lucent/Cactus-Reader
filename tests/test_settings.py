@@ -8,10 +8,14 @@ import unittest
 from pathlib import Path
 
 from cactus_reader.settings import (
+    DEFAULT_HIDE_CURSOR_DELAY,
     DEFAULT_PAGE_GAP,
     DEFAULTS,
+    HIDE_CURSOR_MAX,
+    HIDE_CURSOR_MIN,
     PAGE_GAP_MAX,
     Settings,
+    clamp_hide_cursor_delay,
     clamp_page_gap,
 )
 
@@ -30,7 +34,9 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.double_step, 2)
         self.assertEqual(settings.direction, "ltr")
         self.assertEqual(settings.fit_mode, "height")
+        self.assertTrue(settings.rotate_switches_fit)
         self.assertEqual(settings.page_gap, DEFAULT_PAGE_GAP)
+        self.assertEqual(settings.hide_cursor_delay, DEFAULT_HIDE_CURSOR_DELAY)
         self.assertEqual(settings.effective_step, 2)
 
     def test_effective_step_in_single_mode(self) -> None:
@@ -45,14 +51,21 @@ class SettingsTests(unittest.TestCase):
         settings.fit_mode = "stretch"
         settings.double_step = 7
         settings.page_gap = 999
+        settings.hide_cursor_delay = 999
         self.assertEqual(settings.view_mode, "double")
         self.assertEqual(settings.direction, "ltr")
         self.assertEqual(settings.fit_mode, "height")
         self.assertEqual(settings.double_step, 1)
         self.assertEqual(settings.page_gap, PAGE_GAP_MAX)
+        self.assertEqual(settings.hide_cursor_delay, HIDE_CURSOR_MAX)
         settings.page_gap = -4
+        settings.hide_cursor_delay = -4
         self.assertEqual(settings.page_gap, 0)
+        self.assertEqual(settings.hide_cursor_delay, HIDE_CURSOR_MIN)
         self.assertEqual(clamp_page_gap("bad"), DEFAULT_PAGE_GAP)
+        self.assertEqual(
+            clamp_hide_cursor_delay("bad"), DEFAULT_HIDE_CURSOR_DELAY
+        )
 
     def test_round_trip_with_unicode(self) -> None:
         settings = Settings(self.path)
@@ -61,6 +74,7 @@ class SettingsTests(unittest.TestCase):
         settings.fit_mode = "width"
         settings.double_step = 1
         settings.page_gap = 18
+        settings.hide_cursor_delay = 7
         settings.touch_recent(
             r"C:\漫画\仙人掌.epub", "仙人掌漫画", "某作者", "epub", 4, 20
         )
@@ -75,8 +89,20 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(loaded.fit_mode, "width")
         self.assertEqual(loaded.double_step, 1)
         self.assertEqual(loaded.page_gap, 18)
+        self.assertEqual(loaded.hide_cursor_delay, 7)
         self.assertEqual(loaded.data["recent"][0]["page"], 4)
         self.assertEqual(loaded.data["recent"][0]["total"], 20)
+
+    def test_rotate_fit_switch_round_trips_and_validates(self) -> None:
+        settings = Settings(self.path)
+        settings.rotate_switches_fit = False
+        settings.save()
+        self.assertFalse(Settings(self.path).rotate_switches_fit)
+
+        self.path.write_text(
+            json.dumps({"rotate_switches_fit": "off"}), encoding="utf-8"
+        )
+        self.assertTrue(Settings(self.path).rotate_switches_fit)
 
     def test_recent_is_deduplicated_and_capped(self) -> None:
         settings = Settings(self.path)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QRegularExpression, Qt, Signal
-from PySide6.QtGui import QRegularExpressionValidator
+from PySide6.QtGui import QGuiApplication, QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -11,23 +11,30 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from ..settings import (
+    DEFAULT_HIDE_CURSOR_DELAY,
     DEFAULT_PAGE_GAP,
     DEFAULTS,
+    HIDE_CURSOR_MAX,
+    HIDE_CURSOR_MIN,
+    HIDE_CURSOR_PRESETS,
     PAGE_GAP_MAX,
     PAGE_GAP_MIN,
     PAGE_GAP_PRESETS,
     Settings,
+    clamp_hide_cursor_delay,
     clamp_page_gap,
 )
 from .theme import enable_dark_titlebar, icon
 from .widgets import SegmentedControl
 
 _CUSTOM_GAP = "custom"
+_CUSTOM_DELAY = "custom"
 
 
 class GapPicker(QWidget):
@@ -131,6 +138,109 @@ class GapPicker(QWidget):
         self._segments.set_value(_CUSTOM_GAP)
 
 
+class IdleDelayPicker(QWidget):
+    """Preset cursor-hide delays plus a numeric custom input with hard limits."""
+
+    changed = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._value = DEFAULT_HIDE_CURSOR_DELAY
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        options = [
+            (str(delay), f"{delay} 秒", f"鼠标静止 {delay} 秒后隐藏")
+            for delay in HIDE_CURSOR_PRESETS
+        ]
+        options.append((_CUSTOM_DELAY, "自定义", "输入任意等待秒数"))
+        self._segments = SegmentedControl(options)
+        self._segments.changed.connect(self._on_segment)
+        custom_button = self._segments.button(_CUSTOM_DELAY)
+        if custom_button is not None:
+            custom_button.clicked.connect(self._focus_custom)
+        layout.addWidget(self._segments)
+
+        self._input = QLineEdit()
+        self._input.setObjectName("DelayInput")
+        self._input.setFixedWidth(52)
+        self._input.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._input.setMaxLength(2)
+        self._input.setValidator(
+            QRegularExpressionValidator(
+                QRegularExpression(r"[0-9]{0,2}"), self._input
+            )
+        )
+        self._input.setToolTip(
+            f"输入 {HIDE_CURSOR_MIN}–{HIDE_CURSOR_MAX} 秒，按回车确认"
+        )
+        self._input.setAccessibleName("自定义全屏隐藏鼠标等待时间")
+        self._input.returnPressed.connect(self.commit)
+        self._input.editingFinished.connect(self.commit)
+        self._input.textEdited.connect(self._on_text_edited)
+        layout.addWidget(self._input)
+
+        unit = QLabel("秒")
+        unit.setObjectName("HintLabel")
+        layout.addWidget(unit)
+        self.set_value(DEFAULT_HIDE_CURSOR_DELAY)
+
+    def value(self) -> int:
+        return self._value
+
+    def set_value(self, value: int) -> None:
+        self._value = clamp_hide_cursor_delay(value)
+        self._sync_display()
+
+    def commit(self) -> None:
+        text = self._input.text().strip()
+        if not text:
+            self._sync_display()
+            return
+        try:
+            raw = int(text)
+        except ValueError:
+            self._sync_display()
+            return
+        clamped = clamp_hide_cursor_delay(raw)
+        previous = self._value
+        self._value = clamped
+        self._sync_display()
+        if clamped != previous:
+            self.changed.emit(clamped)
+
+    def _sync_display(self) -> None:
+        if self._value in HIDE_CURSOR_PRESETS:
+            self._segments.set_value(str(self._value))
+        else:
+            self._segments.set_value(_CUSTOM_DELAY)
+        text = str(self._value)
+        if self._input.text() != text:
+            self._input.setText(text)
+
+    def _on_segment(self, value: str) -> None:
+        if value == _CUSTOM_DELAY:
+            self._focus_custom()
+            return
+        self._value = clamp_hide_cursor_delay(int(value))
+        self._sync_display()
+        self.changed.emit(self._value)
+
+    def _focus_custom(self) -> None:
+        self._input.setFocus(Qt.FocusReason.MouseFocusReason)
+        self._input.selectAll()
+
+    def _on_text_edited(self, text: str) -> None:
+        if text.isdigit():
+            number = int(text)
+            if number in HIDE_CURSOR_PRESETS and str(number) == text:
+                self._segments.set_value(text)
+                return
+        self._segments.set_value(_CUSTOM_DELAY)
+
+
 class SettingsDialog(QDialog):
     settingsChanged = Signal()
 
@@ -142,9 +252,30 @@ class SettingsDialog(QDialog):
         self.setWindowIcon(icon("settings"))
         self.setModal(True)
         self.setFixedWidth(640)
+        screen = None
+        if parent is not None and parent.window() is not None:
+            screen = parent.window().screen()
+        screen = screen or QGuiApplication.primaryScreen()
+        if screen is not None:
+            # Keep the buttons reachable on smaller laptop screens; the card
+            # list scrolls instead of growing past the display.
+            self.setMaximumHeight(max(520, screen.availableGeometry().height() - 80))
         enable_dark_titlebar(self)
 
-        root = QVBoxLayout(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        scroll = QScrollArea(self)
+        scroll.setObjectName("SettingsScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.viewport().setAutoFillBackground(False)
+
+        content = QWidget()
+        content.setObjectName("SettingsContent")
+        root = QVBoxLayout(content)
         root.setContentsMargins(28, 24, 28, 20)
         root.setSpacing(14)
 
@@ -235,10 +366,38 @@ class SettingsDialog(QDialog):
         self._fit_hint.setObjectName("HintLabel")
         self._fit_hint.setWordWrap(True)
         fit_box.addWidget(self._fit_hint)
+
+        fit_box.addWidget(_divider())
+        self._rotate_fit_seg = _row(
+            fit_box,
+            "旋转时自动切换铺满方式",
+            "每次旋转 90° 后，自动在铺满高度和铺满宽度之间切换。",
+            [("on", "开启", "每次旋转后自动切换铺满方式"),
+             ("off", "关闭", "旋转时保持当前铺满方式")],
+        )
         root.addWidget(fit_card)
 
+        # ---- fullscreen cursor -------------------------------------------
+        cursor_card = _card()
+        cursor_box = QVBoxLayout(cursor_card)
+        cursor_box.setContentsMargins(20, 16, 20, 16)
+        cursor_box.setSpacing(9)
+        cursor_title = QLabel("全屏时自动隐藏鼠标")
+        cursor_title.setObjectName("CardTitle")
+        cursor_box.addWidget(cursor_title)
+        self._hide_cursor_picker = IdleDelayPicker()
+        cursor_box.addWidget(
+            self._hide_cursor_picker, 0, Qt.AlignmentFlag.AlignLeft
+        )
+        self._hide_cursor_hint = QLabel()
+        self._hide_cursor_hint.setObjectName("HintLabel")
+        self._hide_cursor_hint.setWordWrap(True)
+        cursor_box.addWidget(self._hide_cursor_hint)
+        root.addWidget(cursor_card)
+
         shortcuts = QLabel(
-            "方向键翻页  ·  滚轮翻页  ·  Ctrl+滚轮缩放  ·  Ctrl+中键恢复适配  ·  拖动平移"
+            "方向键翻页  ·  Shift+←/→ 换步长  ·  滚轮翻页  ·  Ctrl+滚轮缩放"
+            "  ·  Ctrl+中键恢复适配  ·  Ctrl+←/→ 旋转  ·  拖动平移"
         )
         shortcuts.setObjectName("HintLabel")
         shortcuts.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -246,8 +405,13 @@ class SettingsDialog(QDialog):
         root.addSpacing(2)
         root.addWidget(shortcuts)
 
-        root.addSpacing(4)
-        bottom = QHBoxLayout()
+        scroll.setWidget(content)
+        outer.addWidget(scroll, 1)
+
+        footer = QFrame()
+        footer.setObjectName("SettingsFooter")
+        bottom = QHBoxLayout(footer)
+        bottom.setContentsMargins(28, 8, 28, 18)
         bottom.setSpacing(10)
         reset = QPushButton("恢复默认")
         reset.setIcon(icon("reset", "#99A79A", 16))
@@ -261,14 +425,20 @@ class SettingsDialog(QDialog):
         done.setDefault(True)
         done.clicked.connect(self.accept)
         bottom.addWidget(done)
-        root.addLayout(bottom)
+        outer.addWidget(footer)
 
         self._view_seg.changed.connect(self._on_view_changed)
         self._step_seg.changed.connect(self._on_step_changed)
         self._direction_seg.changed.connect(self._on_direction_changed)
         self._fit_seg.changed.connect(self._on_fit_changed)
         self._gap_picker.changed.connect(self._on_gap_changed)
+        self._hide_cursor_picker.changed.connect(self._on_hide_cursor_changed)
+        self._rotate_fit_seg.changed.connect(self._on_rotate_fit_changed)
         self._sync_from_settings()
+
+        # A scroll area reports a tiny hint of its own; open at the height the
+        # cards want, capped by the screen space computed above.
+        self.resize(self.width(), max(480, min(860, self.maximumHeight())))
 
     # ---- initialisation --------------------------------------------------
     def _sync_from_settings(self) -> None:
@@ -277,7 +447,9 @@ class SettingsDialog(QDialog):
         self._step_seg.set_value(str(s.double_step))
         self._direction_seg.set_value(s.direction)
         self._fit_seg.set_value(s.fit_mode)
+        self._rotate_fit_seg.set_value("on" if s.rotate_switches_fit else "off")
         self._gap_picker.set_value(s.page_gap)
+        self._hide_cursor_picker.set_value(s.hide_cursor_delay)
         self._update_hints()
         self._step_seg.setEnabled(s.view_mode == "double")
         self._step_hint.setEnabled(s.view_mode == "double")
@@ -315,6 +487,11 @@ class SettingsDialog(QDialog):
             self._fit_hint.setText(
                 "页面宽度贴合窗口；超出的高度可以按住鼠标上下拖动查看。"
             )
+        self._hide_cursor_hint.setText(
+            f"全屏阅读时，鼠标静止达到设定时间后自动隐藏，移动鼠标立即恢复。"
+            f"可输入 {HIDE_CURSOR_MIN}–{HIDE_CURSOR_MAX} 秒，按回车确认；"
+            f"超出范围会自动调整到边界。"
+        )
 
     # ---- changes ---------------------------------------------------------
     def _on_view_changed(self, value: str) -> None:
@@ -345,17 +522,32 @@ class SettingsDialog(QDialog):
         self._update_hints()
         self.settingsChanged.emit()
 
+    def _on_hide_cursor_changed(self, value: int) -> None:
+        self._settings.hide_cursor_delay = value
+        self._update_hints()
+        self.settingsChanged.emit()
+
+    def _on_rotate_fit_changed(self, value: str) -> None:
+        self._settings.rotate_switches_fit = value == "on"
+        self.settingsChanged.emit()
+
     def _reset(self) -> None:
         self._settings.view_mode = DEFAULTS["view_mode"]
         self._settings.double_step = DEFAULTS["double_step"]
         self._settings.direction = DEFAULTS["direction"]
         self._settings.fit_mode = DEFAULTS["fit_mode"]
+        self._settings.rotate_switches_fit = DEFAULTS["rotate_switches_fit"]
         self._settings.page_gap = DEFAULTS["page_gap"]
+        self._settings.hide_cursor_delay = DEFAULTS["hide_cursor_delay"]
         self._view_seg.set_value(self._settings.view_mode)
         self._step_seg.set_value(str(self._settings.double_step))
         self._direction_seg.set_value(self._settings.direction)
         self._fit_seg.set_value(self._settings.fit_mode)
+        self._rotate_fit_seg.set_value(
+            "on" if self._settings.rotate_switches_fit else "off"
+        )
         self._gap_picker.set_value(self._settings.page_gap)
+        self._hide_cursor_picker.set_value(self._settings.hide_cursor_delay)
         self._step_seg.setEnabled(self._settings.view_mode == "double")
         self._step_hint.setEnabled(self._settings.view_mode == "double")
         self._update_hints()
@@ -363,6 +555,7 @@ class SettingsDialog(QDialog):
 
     def accept(self) -> None:
         self._gap_picker.commit()
+        self._hide_cursor_picker.commit()
         super().accept()
 
 

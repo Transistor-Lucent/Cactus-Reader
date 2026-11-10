@@ -19,6 +19,10 @@ PAGE_GAP_MIN = 0
 PAGE_GAP_MAX = 200
 PAGE_GAP_PRESETS = (0, 6, 12, 24)
 DEFAULT_PAGE_GAP = 6
+HIDE_CURSOR_MIN = 1
+HIDE_CURSOR_MAX = 60
+HIDE_CURSOR_PRESETS = (2, 3, 5, 10)
+DEFAULT_HIDE_CURSOR_DELAY = 3
 MAX_RECENT = 10
 
 DEFAULTS: dict[str, Any] = {
@@ -27,7 +31,9 @@ DEFAULTS: dict[str, Any] = {
     "double_step": 2,
     "direction": "ltr",
     "fit_mode": "height",
+    "rotate_switches_fit": True,
     "page_gap": DEFAULT_PAGE_GAP,
+    "hide_cursor_delay": DEFAULT_HIDE_CURSOR_DELAY,
     "window": {
         "x": None,
         "y": None,
@@ -69,7 +75,7 @@ class Settings:
         data = copy.deepcopy(DEFAULTS)
         for key in (
             "view_mode", "double_step", "direction", "fit_mode",
-            "page_gap", "last_dir",
+            "rotate_switches_fit", "page_gap", "hide_cursor_delay", "last_dir",
         ):
             if key in raw:
                 data[key] = raw[key]
@@ -103,8 +109,13 @@ class Settings:
             data["direction"] = DEFAULTS["direction"]
         if data["fit_mode"] not in FIT_MODES:
             data["fit_mode"] = DEFAULTS["fit_mode"]
+        if not isinstance(data.get("rotate_switches_fit"), bool):
+            data["rotate_switches_fit"] = DEFAULTS["rotate_switches_fit"]
         data["double_step"] = 2 if _safe_int(data.get("double_step"), 2) == 2 else 1
         data["page_gap"] = clamp_page_gap(data.get("page_gap"))
+        data["hide_cursor_delay"] = clamp_hide_cursor_delay(
+            data.get("hide_cursor_delay")
+        )
         self.data = data
 
     def save(self) -> None:
@@ -159,12 +170,28 @@ class Settings:
         self.data["fit_mode"] = value if value in FIT_MODES else "height"
 
     @property
+    def rotate_switches_fit(self) -> bool:
+        return bool(self.data.get("rotate_switches_fit", True))
+
+    @rotate_switches_fit.setter
+    def rotate_switches_fit(self, value: bool) -> None:
+        self.data["rotate_switches_fit"] = bool(value)
+
+    @property
     def page_gap(self) -> int:
         return clamp_page_gap(self.data.get("page_gap"))
 
     @page_gap.setter
     def page_gap(self, value: int) -> None:
         self.data["page_gap"] = clamp_page_gap(value)
+
+    @property
+    def hide_cursor_delay(self) -> int:
+        return clamp_hide_cursor_delay(self.data.get("hide_cursor_delay"))
+
+    @hide_cursor_delay.setter
+    def hide_cursor_delay(self, value: int) -> None:
+        self.data["hide_cursor_delay"] = clamp_hide_cursor_delay(value)
 
     @property
     def effective_step(self) -> int:
@@ -246,6 +273,15 @@ def clamp_page_gap(value: Any) -> int:
     except (TypeError, ValueError, OverflowError):
         return DEFAULT_PAGE_GAP
     return max(PAGE_GAP_MIN, min(PAGE_GAP_MAX, number))
+
+
+def clamp_hide_cursor_delay(value: Any) -> int:
+    """Return a valid fullscreen cursor-hide delay in seconds."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError, OverflowError):
+        return DEFAULT_HIDE_CURSOR_DELAY
+    return max(HIDE_CURSOR_MIN, min(HIDE_CURSOR_MAX, number))
 
 
 def _safe_int(value: Any, default: int) -> int:

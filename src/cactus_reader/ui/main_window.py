@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from time import monotonic
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QCursor, QGuiApplication, QIcon, QKeySequence, QShortcut
@@ -78,6 +79,13 @@ class MainWindow(QMainWindow):
         self._edge_timer = QTimer(self)
         self._edge_timer.setInterval(50)
         self._edge_timer.timeout.connect(self._update_edge_buttons)
+        self._edge_timer.timeout.connect(self._poll_cursor_hide)
+
+        # Pointer idle tracking for fullscreen cursor hiding.  Timestamps use
+        # a monotonic clock so sleep/suspend cannot make the pointer vanish.
+        self._cursor_hidden = False
+        self._cursor_last_pos = QCursor.pos()
+        self._cursor_idle_since = monotonic()
 
         self._build_ui()
         self._build_shortcuts()
@@ -179,7 +187,6 @@ class MainWindow(QMainWindow):
         self._slider = PageSlider()
         self._slider.setMinimum(0)
         self._slider.setMaximum(0)
-        self._slider.setToolTip("点击或拖动到任意位置，立即跳转到对应页面")
         self._slider.valueChanged.connect(self._on_slider)
         footer_box.addWidget(self._slider, 1)
 
@@ -218,6 +225,20 @@ class MainWindow(QMainWindow):
         self._direction_button.setIconSize(QSize(15, 15))
         self._direction_button.clicked.connect(self.toggle_direction)
         footer_box.addWidget(self._direction_button)
+
+        footer_box.addWidget(vertical_divider())
+
+        self._rotate_ccw_button = IconButton(
+            "rotate-ccw", "逆时针旋转 90°（Ctrl+←）"
+        )
+        self._rotate_ccw_button.clicked.connect(self.rotate_ccw)
+        footer_box.addWidget(self._rotate_ccw_button)
+
+        self._rotate_cw_button = IconButton(
+            "rotate-cw", "顺时针旋转 90°（Ctrl+→）"
+        )
+        self._rotate_cw_button.clicked.connect(self.rotate_cw)
+        footer_box.addWidget(self._rotate_cw_button)
 
         root.addWidget(self._footer)
         self._footer.hide()
@@ -318,12 +339,14 @@ class MainWindow(QMainWindow):
 
     # ---- book lifecycle --------------------------------------------------
     def open_dialog(self) -> None:
+        self._reset_cursor_activity()
         start_dir = str(self.settings.data.get("last_dir") or "")
         if not start_dir or not Path(start_dir).is_dir():
             start_dir = str(Path.home())
         path, _ = QFileDialog.getOpenFileName(
             self, "打开漫画", start_dir, _FILE_FILTER
         )
+        self._reset_cursor_activity()
         if path:
             self.open_path(path)
 
@@ -400,6 +423,8 @@ class MainWindow(QMainWindow):
         self._reader.setFocus(Qt.FocusReason.OtherFocusReason)
         if book.used_fallback:
             self._toast.show_message("已使用兼容渲染模式显示此文件", 2400)
+        if self._fullscreen:
+            self._reset_cursor_activity()
 
     def close_book(self) -> None:
         if self._book is None:
@@ -536,9 +561,11 @@ class MainWindow(QMainWindow):
         self._update_edge_buttons()
         if self._fullscreen and has_book:
             if not self._edge_timer.isActive():
+                self._reset_cursor_activity()
                 self._edge_timer.start()
         elif self._edge_timer.isActive():
             self._edge_timer.stop()
+            self._apply_cursor_hidden(False)
 
     # ---- fullscreen edge page-turn keys ---------------------------------
     def _position_edge_buttons(self) -> None:
@@ -602,6 +629,63 @@ class MainWindow(QMainWindow):
         self._edge_left_button.hide()
         self._edge_right_button.hide()
 
+    # ---- fullscreen cursor auto-hide ------------------------------------
+    def _reset_cursor_activity(self) -> None:
+        """Show the pointer and restart the fullscreen idle countdown."""
+        self._note_cursor_activity(QCursor.pos())
+
+    def _note_cursor_activity(self, global_pos: QPoint) -> None:
+        self._cursor_last_pos = QPoint(global_pos)
+        self._cursor_idle_since = monotonic()
+        self._apply_cursor_hidden(False)
+
+    def _poll_cursor_hide(self, global_pos: QPoint | None = None) -> None:
+        """Hide the pointer once it has rested over a fullscreen book.
+
+        ``global_pos`` is injectable for deterministic tests; the polling
+        timer calls this without arguments.
+        """
+        if not self._fullscreen or self._book is None:
+            self._apply_cursor_hidden(False)
+            return
+        if (
+            QApplication.activeModalWidget() is not None
+            or QApplication.activePopupWidget() is not None
+        ):
+            # Menus and dialogs need a visible pointer.
+            self._apply_cursor_hidden(False)
+            return
+        if global_pos is None:
+            global_pos = QCursor.pos()
+        if global_pos != self._cursor_last_pos:
+            self._note_cursor_activity(global_pos)
+            return
+        if self._cursor_hidden:
+            return
+        if not self._central.rect().contains(
+            self._central.mapFromGlobal(global_pos)
+        ):
+            # The pointer is over another screen or outside the reading
+            # area; its normal cursor should stay visible there.
+            self._cursor_idle_since = monotonic()
+            return
+        if monotonic() - self._cursor_idle_since >= self.settings.hide_cursor_delay:
+            self._apply_cursor_hidden(True)
+
+    def _apply_cursor_hidden(self, hidden: bool) -> None:
+        hidden = bool(hidden)
+        if hidden == self._cursor_hidden:
+            return
+        self._cursor_hidden = hidden
+        self._reader.set_cursor_hidden(hidden)
+        shape = (
+            Qt.CursorShape.BlankCursor
+            if hidden
+            else Qt.CursorShape.PointingHandCursor
+        )
+        self._edge_left_button.setCursor(shape)
+        self._edge_right_button.setCursor(shape)
+
     def _update_header_for_book(self) -> None:
         if self._book is None:
             self._header_title.setText("Cactus Reader")
@@ -635,20 +719,25 @@ class MainWindow(QMainWindow):
 
     # ---- navigation actions ---------------------------------------------
     def _left_action(self) -> None:
-        if self._book is None:
-            return
-        if self.settings.direction == "rtl":
-            self._reader.forward()
-        else:
-            self._reader.back()
+        self._turn_side(left=True)
 
     def _right_action(self) -> None:
+        self._turn_side(left=False)
+
+    def _turn_side(self, *, left: bool, step: int | None = None) -> None:
         if self._book is None:
             return
-        if self.settings.direction == "rtl":
-            self._reader.back()
+        forward = self.settings.direction == "rtl"
+        if not left:
+            forward = not forward
+        if forward:
+            self._reader.forward(step)
         else:
-            self._reader.forward()
+            self._reader.back(step)
+
+    def _alternate_step(self) -> int:
+        """The other double-page step, so Shift+arrow flips 1 <-> 2."""
+        return 3 - self.settings.double_step
 
     def _forward_page(self) -> None:
         if self._book is not None:
@@ -665,6 +754,25 @@ class MainWindow(QMainWindow):
     def _go_last(self) -> None:
         if self._book is not None:
             self._reader.last()
+
+    # ---- rotation --------------------------------------------------------
+    def rotate_cw(self) -> None:
+        self._rotate(clockwise=True)
+
+    def rotate_ccw(self) -> None:
+        self._rotate(clockwise=False)
+
+    def _rotate(self, *, clockwise: bool) -> None:
+        if self._book is None:
+            return
+        rotated = (
+            self._reader.rotate_cw() if clockwise else self._reader.rotate_ccw()
+        )
+        if rotated and self.settings.rotate_switches_fit:
+            # A page that was too tall/large for the viewport when upright can
+            # become wider than the viewport once turned.  Switching the fit
+            # side keeps the rotated page filling the reading area.
+            self.toggle_fit()
 
     # ---- view toggles ----------------------------------------------------
     def toggle_view_mode(self) -> None:
@@ -687,9 +795,11 @@ class MainWindow(QMainWindow):
 
     # ---- dialogs ---------------------------------------------------------
     def open_settings(self) -> None:
+        self._reset_cursor_activity()
         dialog = SettingsDialog(self.settings, self)
         dialog.settingsChanged.connect(self._apply_reading_settings)
         dialog.exec()
+        self._reset_cursor_activity()
         self.settings.save()
         self._sync_controls()
         self._refresh_welcome()
@@ -697,8 +807,10 @@ class MainWindow(QMainWindow):
             self._reader.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def show_help(self) -> None:
+        self._reset_cursor_activity()
         dialog = HelpDialog(self)
         dialog.exec()
+        self._reset_cursor_activity()
         if self._book is not None:
             self._reader.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -720,6 +832,7 @@ class MainWindow(QMainWindow):
             self._footer.hide()
             self._sync_full_button()
             self._position_edge_buttons()
+            self._reset_cursor_activity()
             if self._book is not None and not self._edge_timer.isActive():
                 self._edge_timer.start()
             self._update_edge_buttons()
@@ -728,6 +841,7 @@ class MainWindow(QMainWindow):
             self._fullscreen = False
             self._edge_timer.stop()
             self._hide_edge_buttons()
+            self._apply_cursor_hidden(False)
             if self._was_maximized:
                 self.showMaximized()
             else:
@@ -769,33 +883,48 @@ class MainWindow(QMainWindow):
             and self.isActiveWindow()
             and QApplication.activeModalWidget() is None
             and QApplication.activePopupWidget() is None
-            and not (event.modifiers() & (Qt.KeyboardModifier.ControlModifier
-                                          | Qt.KeyboardModifier.AltModifier))
+            and not (event.modifiers() & Qt.KeyboardModifier.AltModifier)
         ):
             key = event.key()
-            if key == Qt.Key.Key_Left:
-                self._left_action()
-                return True
-            if key == Qt.Key.Key_Right:
-                self._right_action()
-                return True
-            if key == Qt.Key.Key_PageDown:
-                self._forward_page()
-                return True
-            if key == Qt.Key.Key_PageUp or key == Qt.Key.Key_Backspace:
-                self._back_page()
-                return True
-            if key == Qt.Key.Key_Space:
-                focus = QApplication.focusWidget()
-                if not isinstance(focus, QAbstractButton):
+            modifiers = event.modifiers()
+            # Rotation is physical, so the shortcuts do not follow the
+            # reading direction.  They work windowed and fullscreen alike.
+            if modifiers == Qt.KeyboardModifier.ControlModifier:
+                if key == Qt.Key.Key_Left:
+                    self.rotate_ccw()
+                    return True
+                if key == Qt.Key.Key_Right:
+                    self.rotate_cw()
+                    return True
+            if not (modifiers & Qt.KeyboardModifier.ControlModifier):
+                if key in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+                    # Shift+arrow turns by the other double-page step, so
+                    # either step size is always one keystroke away.
+                    step = None
+                    if (
+                        modifiers & Qt.KeyboardModifier.ShiftModifier
+                        and self.settings.view_mode == "double"
+                    ):
+                        step = self._alternate_step()
+                    self._turn_side(left=key == Qt.Key.Key_Left, step=step)
+                    return True
+                if key == Qt.Key.Key_PageDown:
                     self._forward_page()
                     return True
-            if key == Qt.Key.Key_Home:
-                self._go_first()
-                return True
-            if key == Qt.Key.Key_End:
-                self._go_last()
-                return True
+                if key == Qt.Key.Key_PageUp or key == Qt.Key.Key_Backspace:
+                    self._back_page()
+                    return True
+                if key == Qt.Key.Key_Space:
+                    focus = QApplication.focusWidget()
+                    if not isinstance(focus, QAbstractButton):
+                        self._forward_page()
+                        return True
+                if key == Qt.Key.Key_Home:
+                    self._go_first()
+                    return True
+                if key == Qt.Key.Key_End:
+                    self._go_last()
+                    return True
         return super().eventFilter(watched, event)
 
     # ---- drag and drop ---------------------------------------------------
@@ -844,6 +973,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self._save_timer.stop()
         self._edge_timer.stop()
+        self._apply_cursor_hidden(False)
         self._remember_position()
         self._save_geometry()
         self.settings.save()

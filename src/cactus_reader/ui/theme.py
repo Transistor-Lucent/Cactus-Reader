@@ -64,6 +64,14 @@ _ICON_PATHS: dict[str, str] = {
         '<path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/>'
     ),
     "fit-width": '<path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/>',
+    "rotate-ccw": (
+        '<path d="M1 4v6h6"/>'
+        '<path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>'
+    ),
+    "rotate-cw": (
+        '<path d="M23 4v6h-6"/>'
+        '<path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>'
+    ),
     "view-single": '<rect x="7" y="4" width="10" height="16" rx="1.6"/>',
     "view-double": (
         '<rect x="3" y="4" width="8" height="16" rx="1.4"/>'
@@ -375,7 +383,7 @@ QPushButton#SegmentButton:disabled {{
     color: {c['text_faint']};
     background: transparent;
 }}
-QLineEdit#GapInput {{
+QLineEdit#GapInput, QLineEdit#DelayInput {{
     background: {c['bg']};
     color: {c['text']};
     border: 1px solid {c['border']};
@@ -385,7 +393,7 @@ QLineEdit#GapInput {{
     font-weight: 700;
     selection-background-color: {c['accent_deep']};
 }}
-QLineEdit#GapInput:focus {{
+QLineEdit#GapInput:focus, QLineEdit#DelayInput:focus {{
     border-color: {c['accent_deep']};
     background: {c['surface']};
 }}
@@ -462,6 +470,10 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
 }}
 QDialog#SettingsDialog, QDialog#HelpDialog {{
     background: {c['bg']};
+}}
+QFrame#SettingsFooter {{
+    background: {c['bg']};
+    border-top: 1px solid {c['border']};
 }}
 QToolTip {{
     background: {c['surface_hover']};
