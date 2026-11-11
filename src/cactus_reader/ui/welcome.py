@@ -54,11 +54,6 @@ class WelcomePage(QWidget):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        tagline = QLabel("把漫画收进仙人掌里，一页一页慢慢读。")
-        tagline.setObjectName("WelcomeTagline")
-        tagline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addSpacing(6)
-        layout.addWidget(tagline)
         layout.addSpacing(22)
 
         open_button = QPushButton("打开漫画")
@@ -112,12 +107,6 @@ class WelcomePage(QWidget):
         self._list_layout.addStretch(1)
         self._scroll.setWidget(self._list_host)
         layout.addWidget(self._scroll)
-
-        layout.addSpacing(18)
-        shortcuts = QLabel("Ctrl+O 打开   ·   方向键翻页   ·   F11 全屏")
-        shortcuts.setObjectName("WelcomeHint")
-        shortcuts.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(shortcuts)
         outer.addStretch(1)
 
         self._rows: list[QWidget] = []

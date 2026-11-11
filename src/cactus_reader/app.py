@@ -30,7 +30,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     app = QApplication(argv)
     app.setApplicationName("Cactus Reader")
-    app.setApplicationDisplayName("Cactus Reader")
+    # Window titles are set explicitly.  An empty display name keeps Qt from
+    # appending " - Cactus Reader" to every dialog title on Windows.
+    app.setApplicationDisplayName("")
     app.setOrganizationName("Cactus Studio")
     app.setApplicationVersion(APP_VERSION)
     apply_theme(app)

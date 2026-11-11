@@ -176,7 +176,7 @@ class IdleDelayPicker(QWidget):
         self._input.setToolTip(
             f"输入 {HIDE_CURSOR_MIN}–{HIDE_CURSOR_MAX} 秒，按回车确认"
         )
-        self._input.setAccessibleName("自定义全屏隐藏鼠标等待时间")
+        self._input.setAccessibleName("自定义全屏时隐藏鼠标等待时间")
         self._input.returnPressed.connect(self.commit)
         self._input.editingFinished.connect(self.commit)
         self._input.textEdited.connect(self._on_text_edited)
@@ -276,18 +276,8 @@ class SettingsDialog(QDialog):
         content = QWidget()
         content.setObjectName("SettingsContent")
         root = QVBoxLayout(content)
-        root.setContentsMargins(28, 24, 28, 20)
+        root.setContentsMargins(28, 22, 28, 20)
         root.setSpacing(14)
-
-        title = QLabel("阅读设置")
-        title.setObjectName("DialogTitle")
-        root.addWidget(title)
-
-        intro = QLabel("按你的习惯排版漫画。所有更改会即时生效并自动保存。")
-        intro.setObjectName("DialogIntro")
-        intro.setWordWrap(True)
-        root.addWidget(intro)
-        root.addSpacing(2)
 
         # ---- layout and step --------------------------------------------
         layout_card = _card()
@@ -298,7 +288,6 @@ class SettingsDialog(QDialog):
         self._view_seg = _row(
             layout_box,
             "页面布局",
-            "单页浏览，或左右并排显示两页。",
             [("single", "单页", "每次显示一页漫画"),
              ("double", "双页", "并排显示两页漫画")],
         )
@@ -306,15 +295,10 @@ class SettingsDialog(QDialog):
 
         self._step_seg = _row(
             layout_box,
-            "双页翻页步长",
-            "双页浏览时，一次翻页前进或后退的页数。",
+            "双页显示翻页步长",
             [("1", "翻 1 页", "每次翻一页"),
              ("2", "翻 2 页", "每次翻两页，跳过下一个双页组合")],
         )
-        self._step_hint = QLabel()
-        self._step_hint.setObjectName("HintLabel")
-        self._step_hint.setWordWrap(True)
-        layout_box.addWidget(self._step_hint)
 
         layout_box.addWidget(_divider())
         gap_header = QHBoxLayout()
@@ -326,10 +310,6 @@ class SettingsDialog(QDialog):
         self._gap_picker = GapPicker()
         gap_header.addWidget(self._gap_picker)
         layout_box.addLayout(gap_header)
-        self._gap_hint = QLabel()
-        self._gap_hint.setObjectName("HintLabel")
-        self._gap_hint.setWordWrap(True)
-        layout_box.addWidget(self._gap_hint)
         root.addWidget(layout_card)
 
         # ---- direction ---------------------------------------------------
@@ -340,14 +320,9 @@ class SettingsDialog(QDialog):
         self._direction_seg = _row(
             direction_box,
             "阅读方向",
-            "决定翻页方向和方向键的含义。",
             [("ltr", "从左向右", "右方向键翻到后一页"),
              ("rtl", "从右向左", "左方向键翻到后一页")],
         )
-        self._direction_hint = QLabel()
-        self._direction_hint.setObjectName("HintLabel")
-        self._direction_hint.setWordWrap(True)
-        direction_box.addWidget(self._direction_hint)
         root.addWidget(direction_card)
 
         # ---- fit ---------------------------------------------------------
@@ -358,21 +333,15 @@ class SettingsDialog(QDialog):
         self._fit_seg = _row(
             fit_box,
             "页面适配",
-            "铺满窗口的某一侧，多出的部分可以拖动查看。",
-            [("height", "铺满高度", "页面高度贴合窗口"),
-             ("width", "铺满宽度", "页面宽度贴合窗口")],
+            [("height", "铺满高度", "按高度铺满窗口"),
+             ("width", "铺满宽度", "按宽度铺满窗口")],
         )
-        self._fit_hint = QLabel()
-        self._fit_hint.setObjectName("HintLabel")
-        self._fit_hint.setWordWrap(True)
-        fit_box.addWidget(self._fit_hint)
 
         fit_box.addWidget(_divider())
         self._rotate_fit_seg = _row(
             fit_box,
-            "旋转时自动切换铺满方式",
-            "每次旋转 90° 后，自动在铺满高度和铺满宽度之间切换。",
-            [("on", "开启", "每次旋转后自动切换铺满方式"),
+            "旋转时切换铺满高度/宽度",
+            [("on", "开启", "每次旋转后切换铺满高度与铺满宽度"),
              ("off", "关闭", "旋转时保持当前铺满方式")],
         )
         root.addWidget(fit_card)
@@ -382,22 +351,18 @@ class SettingsDialog(QDialog):
         cursor_box = QVBoxLayout(cursor_card)
         cursor_box.setContentsMargins(20, 16, 20, 16)
         cursor_box.setSpacing(9)
-        cursor_title = QLabel("全屏时自动隐藏鼠标")
+        cursor_title = QLabel("全屏时隐藏鼠标")
         cursor_title.setObjectName("CardTitle")
         cursor_box.addWidget(cursor_title)
         self._hide_cursor_picker = IdleDelayPicker()
         cursor_box.addWidget(
             self._hide_cursor_picker, 0, Qt.AlignmentFlag.AlignLeft
         )
-        self._hide_cursor_hint = QLabel()
-        self._hide_cursor_hint.setObjectName("HintLabel")
-        self._hide_cursor_hint.setWordWrap(True)
-        cursor_box.addWidget(self._hide_cursor_hint)
         root.addWidget(cursor_card)
 
         shortcuts = QLabel(
             "方向键翻页  ·  Shift+←/→ 换步长  ·  滚轮翻页  ·  Ctrl+滚轮缩放"
-            "  ·  Ctrl+中键恢复适配  ·  Ctrl+←/→ 旋转  ·  拖动平移"
+            "  ·  Ctrl+鼠标中键恢复缩放  ·  Ctrl+←/→ 旋转"
         )
         shortcuts.setObjectName("HintLabel")
         shortcuts.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -436,9 +401,10 @@ class SettingsDialog(QDialog):
         self._rotate_fit_seg.changed.connect(self._on_rotate_fit_changed)
         self._sync_from_settings()
 
-        # A scroll area reports a tiny hint of its own; open at the height the
-        # cards want, capped by the screen space computed above.
-        self.resize(self.width(), max(480, min(860, self.maximumHeight())))
+        # A scroll area reports a tiny hint of its own; size the dialog to the
+        # cards plus the fixed footer, capped by the screen space computed above.
+        target_height = content.sizeHint().height() + footer.sizeHint().height() + 2
+        self.resize(self.width(), max(420, min(self.maximumHeight(), target_height)))
 
     # ---- initialisation --------------------------------------------------
     def _sync_from_settings(self) -> None:
@@ -450,81 +416,32 @@ class SettingsDialog(QDialog):
         self._rotate_fit_seg.set_value("on" if s.rotate_switches_fit else "off")
         self._gap_picker.set_value(s.page_gap)
         self._hide_cursor_picker.set_value(s.hide_cursor_delay)
-        self._update_hints()
         self._step_seg.setEnabled(s.view_mode == "double")
-        self._step_hint.setEnabled(s.view_mode == "double")
-
-    def _update_hints(self) -> None:
-        if self._settings.view_mode == "double":
-            self._step_hint.setText(
-                "双页浏览时，每次翻页前进或后退 1 或 2 页。"
-            )
-            self._gap_hint.setText(
-                f"双页并排时两页之间的留白。可点选预设，或输入 "
-                f"{PAGE_GAP_MIN}–{PAGE_GAP_MAX} 像素后按回车；超出范围会自动调整到边界。"
-            )
-        else:
-            self._step_hint.setText(
-                "单页浏览固定每次翻 1 页；切换到双页后可以调整步长。"
-            )
-            self._gap_hint.setText(
-                f"当前为单页浏览，间距仅在双页模式下显示。可先设置 "
-                f"{PAGE_GAP_MIN}–{PAGE_GAP_MAX} 像素，输入后按回车确认。"
-            )
-        if self._settings.direction == "rtl":
-            self._direction_hint.setText(
-                "从右向左：左方向键翻到后一页，右方向键翻到前一页。"
-            )
-        else:
-            self._direction_hint.setText(
-                "从左向右：右方向键翻到后一页，左方向键翻到前一页。"
-            )
-        if self._settings.fit_mode == "height":
-            self._fit_hint.setText(
-                "页面高度贴合窗口；超出的宽度可以按住鼠标左右拖动查看。"
-            )
-        else:
-            self._fit_hint.setText(
-                "页面宽度贴合窗口；超出的高度可以按住鼠标上下拖动查看。"
-            )
-        self._hide_cursor_hint.setText(
-            f"全屏阅读时，鼠标静止达到设定时间后自动隐藏，移动鼠标立即恢复。"
-            f"可输入 {HIDE_CURSOR_MIN}–{HIDE_CURSOR_MAX} 秒，按回车确认；"
-            f"超出范围会自动调整到边界。"
-        )
 
     # ---- changes ---------------------------------------------------------
     def _on_view_changed(self, value: str) -> None:
         self._settings.view_mode = value
-        enabled = value == "double"
-        self._step_seg.setEnabled(enabled)
-        self._step_hint.setEnabled(enabled)
-        self._update_hints()
+        self._step_seg.setEnabled(value == "double")
         self.settingsChanged.emit()
 
     def _on_step_changed(self, value: str) -> None:
         self._settings.double_step = int(value)
-        self._update_hints()
         self.settingsChanged.emit()
 
     def _on_direction_changed(self, value: str) -> None:
         self._settings.direction = value
-        self._update_hints()
         self.settingsChanged.emit()
 
     def _on_fit_changed(self, value: str) -> None:
         self._settings.fit_mode = value
-        self._update_hints()
         self.settingsChanged.emit()
 
     def _on_gap_changed(self, value: int) -> None:
         self._settings.page_gap = value
-        self._update_hints()
         self.settingsChanged.emit()
 
     def _on_hide_cursor_changed(self, value: int) -> None:
         self._settings.hide_cursor_delay = value
-        self._update_hints()
         self.settingsChanged.emit()
 
     def _on_rotate_fit_changed(self, value: str) -> None:
@@ -549,8 +466,6 @@ class SettingsDialog(QDialog):
         self._gap_picker.set_value(self._settings.page_gap)
         self._hide_cursor_picker.set_value(self._settings.hide_cursor_delay)
         self._step_seg.setEnabled(self._settings.view_mode == "double")
-        self._step_hint.setEnabled(self._settings.view_mode == "double")
-        self._update_hints()
         self.settingsChanged.emit()
 
     def accept(self) -> None:
@@ -572,20 +487,13 @@ def _divider() -> QFrame:
     return line
 
 
-def _row(parent_layout: QVBoxLayout, title: str, description: str,
+def _row(parent_layout: QVBoxLayout, title: str,
          options: list[tuple[str, str, str]]) -> SegmentedControl:
     header = QHBoxLayout()
     header.setSpacing(16)
-    text_box = QVBoxLayout()
-    text_box.setSpacing(2)
     name = QLabel(title)
     name.setObjectName("CardTitle")
-    desc = QLabel(description)
-    desc.setObjectName("HintLabel")
-    desc.setWordWrap(True)
-    text_box.addWidget(name)
-    text_box.addWidget(desc)
-    header.addLayout(text_box, 1)
+    header.addWidget(name, 1)
     segment = SegmentedControl(options)
     header.addWidget(segment, 0, Qt.AlignmentFlag.AlignVCenter)
     parent_layout.addLayout(header)

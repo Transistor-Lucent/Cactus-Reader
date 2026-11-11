@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
 )
 
 from ..book import Book, BookError, DrmProtectedError, load_book
-from ..paths import APP_NAME
 from ..settings import Settings
 from .help_dialog import HelpDialog
 from .reader_view import ReaderView
@@ -63,7 +62,7 @@ class MainWindow(QMainWindow):
         self._was_maximized = False
         self._windowed_geometry: QRect | None = None
 
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle("Cactus Reader")
         self.setWindowIcon(app_icon())
         self.setMinimumSize(880, 620)
         self.setAcceptDrops(True)
@@ -149,7 +148,7 @@ class MainWindow(QMainWindow):
         self._help_button.clicked.connect(self.show_help)
         header_box.addWidget(self._help_button)
 
-        self._full_button = IconButton("fullscreen", "全屏（F11）")
+        self._full_button = IconButton("fullscreen", "全屏（F）")
         self._full_button.clicked.connect(self.toggle_fullscreen)
         header_box.addWidget(self._full_button)
         root.addWidget(self._header)
@@ -180,15 +179,15 @@ class MainWindow(QMainWindow):
         footer_box.setContentsMargins(16, 9, 16, 9)
         footer_box.setSpacing(8)
 
-        self._left_button = IconButton("chevron-left", size=40, icon_size=17)
-        self._left_button.clicked.connect(self._left_action)
-        footer_box.addWidget(self._left_button)
-
         self._slider = PageSlider()
         self._slider.setMinimum(0)
         self._slider.setMaximum(0)
         self._slider.valueChanged.connect(self._on_slider)
         footer_box.addWidget(self._slider, 1)
+
+        self._left_button = IconButton("chevron-left", size=40, icon_size=17)
+        self._left_button.clicked.connect(self._left_action)
+        footer_box.addWidget(self._left_button)
 
         self._right_button = IconButton("chevron-right", size=40, icon_size=17)
         self._right_button.clicked.connect(self._right_action)
@@ -265,10 +264,10 @@ class MainWindow(QMainWindow):
             ("Ctrl+O", self.open_dialog),
             ("Ctrl+,", self.open_settings),
             ("F1", self.show_help),
-            ("F11", self.toggle_fullscreen),
+            ("F", self.toggle_fullscreen),
             ("Esc", self._on_escape),
             ("Ctrl+W", self.close_book),
-            ("F", self.toggle_fit),
+            ("H", self.toggle_fit),
         ]
         self._shortcuts: list[QShortcut] = []
         for sequence, handler in bindings:
@@ -419,7 +418,7 @@ class MainWindow(QMainWindow):
         self._apply_reading_settings()
         self._update_header_for_book()
         self._sync_controls()
-        self.setWindowTitle(f"{book.title} — Cactus Reader")
+        self.setWindowTitle("Cactus Reader")
         self._reader.setFocus(Qt.FocusReason.OtherFocusReason)
         if book.used_fallback:
             self._toast.show_message("已使用兼容渲染模式显示此文件", 2400)
@@ -439,7 +438,7 @@ class MainWindow(QMainWindow):
         self._update_header_for_book()
         self._sync_controls()
         self._refresh_welcome()
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle("Cactus Reader")
         self._reader.clearFocus()
         self._welcome.setFocus(Qt.FocusReason.OtherFocusReason)
 
@@ -524,11 +523,11 @@ class MainWindow(QMainWindow):
         if self.settings.fit_mode == "height":
             self._fit_button.setText("铺满高度")
             self._fit_button.setIcon(icon("fit-height", COLORS["text_muted"], 15))
-            self._fit_button.setToolTip("页面高度铺满窗口，点击切换为铺满宽度（F）")
+            self._fit_button.setToolTip("页面高度铺满窗口，点击切换为铺满宽度（H）")
         else:
             self._fit_button.setText("铺满宽度")
             self._fit_button.setIcon(icon("fit-width", COLORS["text_muted"], 15))
-            self._fit_button.setToolTip("页面宽度铺满窗口，点击切换为铺满高度（F）")
+            self._fit_button.setToolTip("页面宽度铺满窗口，点击切换为铺满高度（H）")
 
         if self.settings.view_mode == "double":
             self._view_button.setText("双页")
@@ -542,11 +541,11 @@ class MainWindow(QMainWindow):
         if rtl:
             self._direction_button.setText("右←左")
             self._direction_button.setIcon(QIcon())
-            self._direction_button.setToolTip("从右向左阅读：左键翻到后一页，点击切换为从左向右")
+            self._direction_button.setToolTip("点击切换阅读方向")
         else:
             self._direction_button.setText("左→右")
             self._direction_button.setIcon(QIcon())
-            self._direction_button.setToolTip("从左向右阅读：右键翻到后一页，点击切换为从右向左")
+            self._direction_button.setToolTip("点击切换阅读方向")
 
         # The fullscreen edge buttons mirror the footer arrows.
         self._edge_left_button.setEnabled(has_book and left_enabled)
@@ -836,7 +835,7 @@ class MainWindow(QMainWindow):
             if self._book is not None and not self._edge_timer.isActive():
                 self._edge_timer.start()
             self._update_edge_buttons()
-            self._toast.show_message("按 F11 或 Esc 退出全屏", 2000)
+            self._toast.show_message("按 F 或 Esc 退出全屏", 2000)
         else:
             self._fullscreen = False
             self._edge_timer.stop()
@@ -860,7 +859,7 @@ class MainWindow(QMainWindow):
             "fullscreen-exit" if self._fullscreen else "fullscreen"
         )
         self._full_button.setToolTip(
-            "退出全屏（F11）" if self._fullscreen else "全屏（F11）"
+            "退出全屏（F）" if self._fullscreen else "全屏（F）"
         )
 
     def _on_escape(self) -> None:

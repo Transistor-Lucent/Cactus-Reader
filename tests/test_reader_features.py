@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from PySide6.QtCore import QPoint, QPointF, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QWheelEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
-from PySide6.QtWidgets import QApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
 from cactus_reader.settings import (  # noqa: E402
     DEFAULT_HIDE_CURSOR_DELAY,
@@ -26,6 +26,7 @@ from cactus_reader.settings import (  # noqa: E402
 )
 from cactus_reader.ui.main_window import MainWindow  # noqa: E402
 from cactus_reader.ui.settings_dialog import SettingsDialog  # noqa: E402
+from cactus_reader.ui.welcome import WelcomePage  # noqa: E402
 from cactus_reader.ui.widgets import PageSlider  # noqa: E402
 
 SAMPLE = ROOT / "tests" / "samples" / "cactus_sample.epub"
@@ -253,6 +254,73 @@ class ReaderFeatureTests(unittest.TestCase):
 
     def test_progress_slider_has_no_hover_tooltip(self) -> None:
         self.assertEqual(self.slider.toolTip(), "")
+
+    def test_footer_turn_buttons_are_both_right_of_the_slider(self) -> None:
+        footer = self.window._footer
+        footer_top_left = footer.mapToGlobal(QPoint(0, 0))
+        slider_left = self.slider.mapToGlobal(QPoint(0, 0)).x() - footer_top_left.x()
+        slider_right = slider_left + self.slider.width()
+        left_button = (
+            self.window._left_button.mapToGlobal(QPoint(0, 0)).x()
+            - footer_top_left.x()
+        )
+        right_button = (
+            self.window._right_button.mapToGlobal(QPoint(0, 0)).x()
+            - footer_top_left.x()
+        )
+        self.assertGreaterEqual(left_button, slider_right)
+        self.assertGreater(right_button, left_button)
+
+    def test_direction_button_has_a_generic_toggle_tooltip(self) -> None:
+        button = self.window._direction_button
+        self.assertEqual(button.text(), "左→右")
+        self.assertEqual(button.toolTip(), "点击切换阅读方向")
+
+        self.settings.direction = "rtl"
+        self.window._apply_reading_settings()
+        self.assertEqual(button.text(), "右←左")
+        self.assertEqual(button.toolTip(), "点击切换阅读方向")
+
+    def test_window_title_stays_constant(self) -> None:
+        self.assertEqual(self.window.windowTitle(), "Cactus Reader")
+        self.window.close_book()
+        self.assertEqual(self.window.windowTitle(), "Cactus Reader")
+
+    def test_welcome_page_omits_tagline_and_shortcut_hint(self) -> None:
+        page = WelcomePage()
+        text = "\n".join(label.text() for label in page.findChildren(QLabel))
+        self.assertNotIn("把漫画收进仙人掌里", text)
+        self.assertNotIn("Ctrl+O 打开", text)
+        self.assertNotIn("F11", text)
+        page.deleteLater()
+
+    def test_settings_dialog_uses_trimmed_labels(self) -> None:
+        dialog = SettingsDialog(self.settings)
+        self.assertEqual(dialog.windowTitle(), "阅读设置")
+        text = "\n".join(label.text() for label in dialog.findChildren(QLabel))
+        self.assertIn("双页显示翻页步长", text)
+        self.assertIn("旋转时切换铺满高度/宽度", text)
+        self.assertIn("全屏时隐藏鼠标", text)
+        self.assertIn("Ctrl+鼠标中键恢复缩放", text)
+        for removed in (
+            "阅读设置",
+            "按你的习惯排版漫画",
+            "单页浏览，或左右",
+            "双页浏览时",
+            "双页并排时",
+            "决定翻页方向",
+            "从右向左：左方向键",
+            "铺满窗口的某一侧",
+            "页面高度贴合窗口",
+            "每次旋转 90°",
+            "全屏阅读时",
+            "全屏时自动隐藏鼠标",
+            "双页翻页步长",
+            "Ctrl+中键恢复适配",
+            "拖动平移",
+        ):
+            self.assertNotIn(removed, text)
+        dialog.close()
 
     def test_hide_cursor_delay_picker_clamps_and_resets(self) -> None:
         dialog = SettingsDialog(self.settings)

@@ -6,7 +6,7 @@
   "fit_mode": "height",
   "rotate_switches_fit": true,
   "page_gap": 6,
-  "hide_cursor_delay": 3,
+  "hide_cursor_delay": 1,
   "window": {
     "x": 340,
     "y": 106,
@@ -21,36 +21,9 @@
       "title": "citrus~柑橘味香氣~ 5",
       "author": "サブロウタ",
       "format": "EPUB",
-      "page": 88,
+      "page": 29,
       "total": 166,
-      "opened_at": "2026-11-10T16:05:49+00:00"
-    },
-    {
-      "path": "C:\\D_Virtual\\Media\\citrus\\citrus~柑橘味香氣~ 4.epub",
-      "title": "citrus~柑橘味香氣~ 4",
-      "author": "サブロウタ",
-      "format": "EPUB",
-      "page": 153,
-      "total": 166,
-      "opened_at": "2026-11-10T09:50:37+00:00"
-    },
-    {
-      "path": "C:\\D_Virtual\\Media\\citrus\\[Kmoe][citrus~柑橘味香氣~]卷04.mobi",
-      "title": "citrus~柑橘味香氣~ - 卷04",
-      "author": "サブロウタ",
-      "format": "MOBI",
-      "page": 155,
-      "total": 158,
-      "opened_at": "2026-11-10T08:56:17+00:00"
-    },
-    {
-      "path": "C:\\D_Virtual\\Media\\citrus\\[Kmoe][citrus~柑橘味香氣~]卷01.epub",
-      "title": "citrus~柑橘味香氣~ - 卷01",
-      "author": "サブロウタ",
-      "format": "EPUB",
-      "page": 70,
-      "total": 170,
-      "opened_at": "2026-11-10T03:21:37+00:00"
+      "opened_at": "2026-11-11T02:48:52+00:00"
     }
   ]
 }

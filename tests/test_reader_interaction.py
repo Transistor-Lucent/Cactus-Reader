@@ -135,7 +135,26 @@ class ReaderInteractionTests(unittest.TestCase):
         QTest.keyClick(self.window._slider, Qt.Key.Key_Right)
         self.assertEqual(self.reader.current_page, 0)
 
+        QTest.keyClick(self.window, Qt.Key.Key_H)
+        self.assertEqual(self.settings.fit_mode, "width")
+
+    def test_f_toggles_fullscreen_and_h_switches_fit(self) -> None:
+        self.window.show()
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+
         QTest.keyClick(self.window, Qt.Key.Key_F)
+        self.app.processEvents()
+        self.assertTrue(self.window._fullscreen)
+
+        self.window.activateWindow()
+        self.assertTrue(QTest.qWaitForWindowActive(self.window, 1500))
+        QTest.keyClick(self.window, Qt.Key.Key_F)
+        self.app.processEvents()
+        self.assertFalse(self.window._fullscreen)
+
+        QTest.keyClick(self.window, Qt.Key.Key_H)
+        self.assertFalse(self.window._fullscreen)
         self.assertEqual(self.settings.fit_mode, "width")
 
     def test_shift_arrows_use_the_alternate_double_page_step(self) -> None:
