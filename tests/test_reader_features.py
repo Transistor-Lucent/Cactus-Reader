@@ -255,21 +255,108 @@ class ReaderFeatureTests(unittest.TestCase):
     def test_progress_slider_has_no_hover_tooltip(self) -> None:
         self.assertEqual(self.slider.toolTip(), "")
 
-    def test_footer_turn_buttons_are_both_right_of_the_slider(self) -> None:
+    def test_turn_buttons_sit_in_header_before_open_button(self) -> None:
+        header = self.window._header
+        self.assertIs(self.window._left_button.parentWidget(), header)
+        self.assertIs(self.window._right_button.parentWidget(), header)
+        self.assertEqual(self.window._left_button.toolTip(), "")
+        self.assertEqual(self.window._right_button.toolTip(), "")
+        self.assertLessEqual(header.height(), 60)
+
+        origin = header.mapToGlobal(QPoint(0, 0)).x()
+        left = self.window._left_button.mapToGlobal(QPoint(0, 0)).x() - origin
+        right = self.window._right_button.mapToGlobal(QPoint(0, 0)).x() - origin
+        divider = self.window._turn_divider.mapToGlobal(QPoint(0, 0)).x() - origin
+        divider_right = divider + self.window._turn_divider.width()
+        open_button = self.window._open_button.mapToGlobal(QPoint(0, 0)).x() - origin
+        self.assertLess(left, right)
+        self.assertLess(right, divider)
+        self.assertGreater(open_button, divider_right)
+        self.assertGreaterEqual(open_button - divider_right, 20)
+
+    def test_footer_is_hidden_until_pointer_reaches_bottom(self) -> None:
+        self.window._footer_timer.stop()
+        self.window._set_footer_visible(False)
+        self.app.processEvents()
         footer = self.window._footer
-        footer_top_left = footer.mapToGlobal(QPoint(0, 0))
-        slider_left = self.slider.mapToGlobal(QPoint(0, 0)).x() - footer_top_left.x()
-        slider_right = slider_left + self.slider.width()
-        left_button = (
-            self.window._left_button.mapToGlobal(QPoint(0, 0)).x()
-            - footer_top_left.x()
+        self.assertFalse(footer.isVisible())
+        self.assertLessEqual(footer.height(), 52)
+
+        inside_reader = self.window._central.mapToGlobal(
+            self.window._central.rect().center()
         )
-        right_button = (
-            self.window._right_button.mapToGlobal(QPoint(0, 0)).x()
-            - footer_top_left.x()
+        self.window._update_footer_visibility(inside_reader)
+        self.assertFalse(footer.isVisible())
+
+        self.window._update_footer_visibility(
+            self.window._footer_reveal_rect().center()
         )
-        self.assertGreaterEqual(left_button, slider_right)
-        self.assertGreater(right_button, left_button)
+        self.app.processEvents()
+        self.assertTrue(footer.isVisible())
+
+        # Moving within the bar keeps it open; moving back into the reader
+        # hides it again.
+        self.window._update_footer_visibility(
+            footer.mapToGlobal(footer.rect().center())
+        )
+        self.app.processEvents()
+        self.assertTrue(footer.isVisible())
+        self.window._update_footer_visibility(inside_reader)
+        self.app.processEvents()
+        self.assertFalse(footer.isVisible())
+
+    def test_fit_height_adapts_when_footer_appears(self) -> None:
+        self.window._footer_timer.stop()
+        self.settings.fit_mode = "height"
+        self.window._apply_reading_settings()
+        self.window._set_footer_visible(False)
+        self.app.processEvents()
+
+        hidden_viewport = self.reader.height()
+        self.reader._rebuild_layout()
+        self.assertAlmostEqual(
+            self.reader._content_size.height(), hidden_viewport, delta=1
+        )
+
+        self.window._update_footer_visibility(
+            self.window._footer_reveal_rect().center()
+        )
+        self.app.processEvents()
+        self.assertTrue(self.window._footer.isVisible())
+        shown_viewport = self.reader.height()
+        self.assertLess(shown_viewport, hidden_viewport)
+        self.reader._rebuild_layout()
+        self.assertAlmostEqual(
+            self.reader._content_size.height(), shown_viewport, delta=1
+        )
+
+        inside_reader = self.window._central.mapToGlobal(
+            self.window._central.rect().center()
+        )
+        self.window._update_footer_visibility(inside_reader)
+        self.app.processEvents()
+        self.assertFalse(self.window._footer.isVisible())
+        self.assertEqual(self.reader.height(), hidden_viewport)
+        self.reader._rebuild_layout()
+        self.assertAlmostEqual(
+            self.reader._content_size.height(), hidden_viewport, delta=1
+        )
+
+    def test_footer_watch_runs_only_while_windowed_reading(self) -> None:
+        self.assertTrue(self.window._footer_timer.isActive())
+        self.window.toggle_fullscreen()
+        self.app.processEvents()
+        self.assertFalse(self.window._footer_timer.isActive())
+        self.assertFalse(self.window._footer.isVisible())
+
+        self.window.toggle_fullscreen()
+        self.app.processEvents()
+        self.assertTrue(self.window._footer_timer.isActive())
+        self.assertFalse(self.window._footer.isVisible())
+
+        self.window.close_book()
+        self.assertFalse(self.window._footer_timer.isActive())
+        self.assertFalse(self.window._footer.isVisible())
 
     def test_direction_button_has_a_generic_toggle_tooltip(self) -> None:
         button = self.window._direction_button

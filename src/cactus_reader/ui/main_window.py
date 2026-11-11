@@ -72,6 +72,12 @@ class MainWindow(QMainWindow):
         self._save_timer.setInterval(1200)
         self._save_timer.timeout.connect(self._save_settings)
 
+        # The footer stays out of the reading area until the pointer reaches
+        # the bottom edge of the window.
+        self._footer_timer = QTimer(self)
+        self._footer_timer.setInterval(80)
+        self._footer_timer.timeout.connect(self._update_footer_visibility)
+
         # Polls the pointer while fullscreen so the edge buttons appear as
         # soon as the mouse approaches them, even while it rests over another
         # widget.
@@ -111,9 +117,9 @@ class MainWindow(QMainWindow):
         # Header ---------------------------------------------------------
         self._header = QFrame()
         self._header.setObjectName("Header")
-        self._header.setFixedHeight(68)
+        self._header.setFixedHeight(56)
         header_box = QHBoxLayout(self._header)
-        header_box.setContentsMargins(20, 10, 18, 10)
+        header_box.setContentsMargins(18, 8, 16, 8)
         header_box.setSpacing(12)
 
         logo = QLabel()
@@ -130,6 +136,19 @@ class MainWindow(QMainWindow):
         title_box.addWidget(self._header_title)
         title_box.addWidget(self._header_meta)
         header_box.addLayout(title_box, 1)
+
+        # Page-turn arrows live in the header, just before the open button.
+        self._left_button = IconButton("chevron-left", size=40, icon_size=17)
+        self._left_button.clicked.connect(self._left_action)
+        header_box.addWidget(self._left_button)
+
+        self._right_button = IconButton("chevron-right", size=40, icon_size=17)
+        self._right_button.clicked.connect(self._right_action)
+        header_box.addWidget(self._right_button)
+
+        self._turn_divider = vertical_divider()
+        header_box.addWidget(self._turn_divider)
+        header_box.addSpacing(16)
 
         self._open_button = QPushButton("打开漫画")
         self._open_button.setIcon(icon("open", COLORS["text"], 17))
@@ -174,9 +193,9 @@ class MainWindow(QMainWindow):
         # Footer ---------------------------------------------------------
         self._footer = QFrame()
         self._footer.setObjectName("Footer")
-        self._footer.setFixedHeight(62)
+        self._footer.setFixedHeight(50)
         footer_box = QHBoxLayout(self._footer)
-        footer_box.setContentsMargins(16, 9, 16, 9)
+        footer_box.setContentsMargins(16, 8, 16, 8)
         footer_box.setSpacing(8)
 
         self._slider = PageSlider()
@@ -184,14 +203,6 @@ class MainWindow(QMainWindow):
         self._slider.setMaximum(0)
         self._slider.valueChanged.connect(self._on_slider)
         footer_box.addWidget(self._slider, 1)
-
-        self._left_button = IconButton("chevron-left", size=40, icon_size=17)
-        self._left_button.clicked.connect(self._left_action)
-        footer_box.addWidget(self._left_button)
-
-        self._right_button = IconButton("chevron-right", size=40, icon_size=17)
-        self._right_button.clicked.connect(self._right_action)
-        footer_box.addWidget(self._right_button)
 
         self._status = QLabel("0 / 0")
         self._status.setObjectName("PageStatus")
@@ -228,13 +239,13 @@ class MainWindow(QMainWindow):
         footer_box.addWidget(vertical_divider())
 
         self._rotate_ccw_button = IconButton(
-            "rotate-ccw", "逆时针旋转 90°（Ctrl+←）"
+            "rotate-ccw", "逆时针旋转 90°（Ctrl+←）", size=34, icon_size=17
         )
         self._rotate_ccw_button.clicked.connect(self.rotate_ccw)
         footer_box.addWidget(self._rotate_ccw_button)
 
         self._rotate_cw_button = IconButton(
-            "rotate-cw", "顺时针旋转 90°（Ctrl+→）"
+            "rotate-cw", "顺时针旋转 90°（Ctrl+→）", size=34, icon_size=17
         )
         self._rotate_cw_button.clicked.connect(self.rotate_cw)
         footer_box.addWidget(self._rotate_cw_button)
@@ -413,8 +424,8 @@ class MainWindow(QMainWindow):
         self.settings.save()
 
         self._stack.setCurrentWidget(self._reader)
-        self._footer.setVisible(not self._fullscreen)
         self._reader.set_book(book, start_page)
+        self._start_footer_watch()
         self._apply_reading_settings()
         self._update_header_for_book()
         self._sync_controls()
@@ -434,7 +445,7 @@ class MainWindow(QMainWindow):
         self._book = None
         self._reader.set_book(None)
         self._stack.setCurrentWidget(self._welcome)
-        self._footer.hide()
+        self._stop_footer_watch()
         self._update_header_for_book()
         self._sync_controls()
         self._refresh_welcome()
@@ -513,12 +524,6 @@ class MainWindow(QMainWindow):
         right_enabled = self._reader.can_back() if rtl else self._reader.can_forward()
         self._left_button.setEnabled(has_book and left_enabled)
         self._right_button.setEnabled(has_book and right_enabled)
-        self._left_button.setToolTip(
-            "下一页（←）" if rtl else "上一页（←）"
-        )
-        self._right_button.setToolTip(
-            "上一页（→）" if rtl else "下一页（→）"
-        )
 
         if self.settings.fit_mode == "height":
             self._fit_button.setText("铺满高度")
@@ -565,6 +570,62 @@ class MainWindow(QMainWindow):
         elif self._edge_timer.isActive():
             self._edge_timer.stop()
             self._apply_cursor_hidden(False)
+
+    # ---- auto-hiding footer ---------------------------------------------
+    def _start_footer_watch(self) -> None:
+        if self._book is None or self._fullscreen:
+            self._stop_footer_watch()
+            return
+        self._set_footer_visible(False)
+        if not self._footer_timer.isActive():
+            self._footer_timer.start()
+
+    def _stop_footer_watch(self) -> None:
+        self._footer_timer.stop()
+        self._set_footer_visible(False)
+
+    def _footer_reveal_rect(self) -> QRect:
+        """The footer-shaped strip that brings the hidden bar back."""
+        central = self._central
+        height = min(
+            max(1, self._footer.height()), max(1, central.height())
+        )
+        top_left = central.mapToGlobal(QPoint(0, central.height() - height))
+        return QRect(top_left, QSize(central.width(), height))
+
+    def _update_footer_visibility(
+        self, global_pos: QPoint | None = None
+    ) -> None:
+        if (
+            self._book is None
+            or self._fullscreen
+            or not self.isVisible()
+            or self.isMinimized()
+        ):
+            self._set_footer_visible(False)
+            return
+        if global_pos is None:
+            global_pos = QCursor.pos()
+        if self._footer.isVisible():
+            # Do not yank the slider away while it is being dragged.
+            if QApplication.mouseButtons() != Qt.MouseButton.NoButton:
+                return
+            if self._footer.rect().contains(
+                self._footer.mapFromGlobal(global_pos)
+            ):
+                return
+            self._set_footer_visible(False)
+            return
+        if self._footer_reveal_rect().contains(global_pos):
+            self._set_footer_visible(True)
+
+    def _set_footer_visible(self, visible: bool) -> None:
+        if visible == self._footer.isVisible():
+            return
+        self._footer.setVisible(visible)
+        # The footer takes height from the reader.  Repaint immediately so a
+        # height-fit page grows or shrinks with the available viewport.
+        self._reader.update()
 
     # ---- fullscreen edge page-turn keys ---------------------------------
     def _position_edge_buttons(self) -> None:
@@ -828,7 +889,8 @@ class MainWindow(QMainWindow):
             self._fullscreen = True
             self.showFullScreen()
             self._header.hide()
-            self._footer.hide()
+            self._footer_timer.stop()
+            self._set_footer_visible(False)
             self._sync_full_button()
             self._position_edge_buttons()
             self._reset_cursor_activity()
@@ -848,7 +910,7 @@ class MainWindow(QMainWindow):
                     self.setGeometry(self._windowed_geometry)
                 self.showNormal()
             self._header.show()
-            self._footer.setVisible(self._book is not None)
+            self._start_footer_watch()
             self._sync_full_button()
             self._overlay.setGeometry(self._central.rect())
             if self._book is not None:

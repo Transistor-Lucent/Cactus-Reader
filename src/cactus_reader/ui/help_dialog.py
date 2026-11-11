@@ -41,13 +41,15 @@ _HELP_HTML = f"""
 <h2>翻页</h2>
 <ul>
   <li><span class="key">←</span> <span class="key">→</span> 按阅读方向翻页。从左向右时，→ 是后一页；
-      从右向左时，← 是后一页。底栏两侧的按钮遵循同样的规则。</li>
+      从右向左时，← 是后一页。顶栏「打开漫画」左侧的两个翻页按钮遵循同样的规则。</li>
   <li><span class="key">Shift</span> + <span class="key">←</span> /
       <span class="key">→</span> 双页浏览时按相反的步长翻页：设置为 2 页时翻 1 页，
       设置为 1 页时翻 2 页。</li>
   <li><span class="key">PageDown</span> / <span class="key">Space</span> 后一页，
       <span class="key">PageUp</span> / <span class="key">Backspace</span> 前一页。</li>
   <li><span class="key">Home</span> 回到开头，<span class="key">End</span> 跳到结尾。</li>
+  <li>底栏会自动隐藏；把鼠标移到窗口底部即可显示进度条和显示按钮，移开后再收起。
+      铺满高度会随底栏的显示和隐藏自动调整页面大小。</li>
   <li>点击或拖动底栏进度条，画面会立即跳到对应页；拖动时也持续跟随。</li>
   <li>进度条方向会跟随阅读方向：从右向左阅读时，右侧是已读部分。</li>
   <li>鼠标滚轮向下翻到后一页，向上翻到前一页。</li>
@@ -60,7 +62,7 @@ _HELP_HTML = f"""
   <li><span class="key">Ctrl</span> + 鼠标滚轮向上放大、向下缩小；
       <span class="key">Ctrl</span> + 鼠标中键恢复到当前铺满模式的 100% 大小。</li>
   <li><span class="key">Ctrl+←</span> 逆时针旋转 90°，<span class="key">Ctrl+→</span>
-      顺时针旋转 90°；底栏右侧也有对应的旋转按钮。双页浏览时两页各围绕自身旋转，
+      顺时针旋转 90°；把鼠标移到窗口底部显示底栏后，右侧也有对应的旋转按钮。双页浏览时两页各围绕自身旋转，
       左右两页的相对位置保持不变。默认每次旋转还会自动在铺满高度与铺满宽度之间
       切换，可在阅读设置中关闭。</li>
   <li>画面超出窗口时，按住鼠标左键拖动即可平移。</li>
