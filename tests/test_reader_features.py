@@ -30,6 +30,7 @@ from cactus_reader.ui.welcome import WelcomePage  # noqa: E402
 from cactus_reader.ui.widgets import PageSlider  # noqa: E402
 
 SAMPLE = ROOT / "tests" / "samples" / "cactus_sample.epub"
+PDF_SAMPLE = ROOT / "tests" / "samples" / "cactus_sample.pdf"
 
 
 class ReaderFeatureTests(unittest.TestCase):
@@ -60,6 +61,14 @@ class ReaderFeatureTests(unittest.TestCase):
             Qt.KeyboardModifier.NoModifier, QPoint(x, y),
         )
         self.app.processEvents()
+
+    def test_pdf_opens_in_the_reader(self) -> None:
+        self.window.open_path(str(PDF_SAMPLE))
+        self.assertIsNotNone(self.window._book)
+        self.assertEqual(self.window._book.fmt, "PDF")
+        self.assertEqual(self.reader.page_count, 5)
+        self.assertEqual(self.window._header_meta.text(), "Cactus Studio  ·  PDF  ·  5 页")
+        self.assertFalse(self.window._book.used_fallback)
 
     def test_slider_pages_follow_while_dragging(self) -> None:
         y = self.slider.height() // 2

@@ -18,7 +18,7 @@ VSVersionInfo(
           u'080404B0',
           [
             StringStruct(u'CompanyName', u'Cactus Studio'),
-            StringStruct(u'FileDescription', u'Cactus Reader — EPUB / MOBI 漫画阅读器'),
+            StringStruct(u'FileDescription', u'Cactus Reader — EPUB / MOBI / PDF 漫画阅读器'),
             StringStruct(u'FileVersion', u'1.0.0'),
             StringStruct(u'InternalName', u'CactusReader'),
             StringStruct(u'LegalCopyright', u'Copyright © 2026 Cactus Studio'),

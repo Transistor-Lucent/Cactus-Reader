@@ -1,3 +1,5 @@
 *.exe
 _internal/
-assets/
+assets/cactus.svg
+assets/icon.ico
+assets/icon.png

@@ -110,7 +110,11 @@ class Book:
 
 
 def load_book(path: str | Path) -> Book:
-    """Load an EPUB/MOBI comic, with a rendered-page fallback for odd files."""
+    """Load an EPUB, MOBI or PDF comic.
+
+    Image-based EPUB/MOBI files use the lightweight extractors below.  PDFs
+    and unusual EPUB/MOBI layouts are rendered page by page with PyMuPDF.
+    """
     book_path = Path(path).expanduser().resolve()
     if not book_path.exists():
         raise BookError(f"文件不存在：\n{book_path}")
@@ -118,9 +122,30 @@ def load_book(path: str | Path) -> Book:
         raise BookError(f"这不是一个文件：\n{book_path}")
 
     suffix = book_path.suffix.lower()
-    supported = (".epub", ".mobi", ".prc", ".azw", ".azw3")
+    supported = (".epub", ".mobi", ".prc", ".azw", ".azw3", ".pdf")
     if suffix not in supported:
-        raise BookError("仅支持 EPUB 和 MOBI 格式的漫画。")
+        raise BookError("仅支持 EPUB、MOBI 和 PDF 格式的漫画。")
+
+    # A PDF has no image-resource structure to unpack: every page is a canvas
+    # and should be rendered directly.  Do not mark it as a compatibility
+    # fallback, so the reader does not show the fallback toast.
+    if suffix == ".pdf":
+        try:
+            book = _load_with_fitz(book_path, used_fallback=False)
+        except DrmProtectedError:
+            raise
+        except BookError:
+            raise
+        except Exception as exc:
+            log.info("PDF parser failed for %s: %s", book_path, exc)
+            raise BookError(
+                "无法读取这个 PDF 文件。文件可能已损坏或受密码保护。"
+            ) from exc
+        if book.page_count <= 0:
+            book.close()
+            raise NoPagesError("这个 PDF 中没有可显示的页面。")
+        return book
+
     custom_error: Exception | None = None
     book: Book | None = None
 
@@ -165,40 +190,52 @@ def load_book(path: str | Path) -> Book:
     return book
 
 
-def _load_with_fitz(path: Path) -> Book:
+def _load_with_fitz(path: Path, *, used_fallback: bool = True) -> Book:
     import pymupdf
 
     try:
         document = pymupdf.open(str(path))
     except Exception as exc:
-        raise BookError("无法使用备用渲染器打开此文件。") from exc
-    if document.needs_pass:
-        document.close()
-        raise DrmProtectedError("这本漫画受密码或 DRM 保护，无法打开。")
-    if document.page_count <= 0:
-        document.close()
-        raise NoPagesError("这本漫画中没有可显示的页面。")
+        if used_fallback:
+            raise BookError("无法使用备用渲染器打开此文件。") from exc
+        raise BookError("这不是有效的 PDF 文件。") from exc
+    try:
+        if document.needs_pass:
+            raise DrmProtectedError("这个文件受密码或 DRM 保护，无法打开。")
+        if document.page_count <= 0:
+            raise NoPagesError("这个文件中没有可显示的页面。")
 
-    metadata = document.metadata or {}
-    fmt = str(metadata.get("format") or path.suffix.lstrip(".")).upper()
-    if fmt not in ("EPUB", "MOBI", "KF8", "AZW3"):
-        fmt = "MOBI" if path.suffix.lower() in (".mobi", ".prc", ".azw", ".azw3") else "EPUB"
-    title = (metadata.get("title") or "").strip() or path.stem
-    author = (metadata.get("author") or "").strip()
+        metadata = document.metadata or {}
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            fmt = "PDF"
+        elif suffix == ".epub":
+            fmt = "EPUB"
+        elif suffix in (".mobi", ".prc", ".azw", ".azw3"):
+            fmt = "MOBI"
+        else:
+            fmt = str(metadata.get("format") or suffix.lstrip(".")).upper()
+        title = (metadata.get("title") or "").strip() or path.stem
+        author = (metadata.get("author") or "").strip()
 
-    pages: list[Page] = []
-    for number in range(document.page_count):
-        page = document.load_page(number)
-        rect = page.rect
-        width = max(1, int(round(rect.width)))
-        height = max(1, int(round(rect.height)))
-        pages.append(
-            Page(
-                width=width,
-                height=height,
-                source=RenderedPageSource(document, number, rect.width, rect.height),
+        pages: list[Page] = []
+        for number in range(document.page_count):
+            page = document.load_page(number)
+            rect = page.rect
+            width = max(1, int(round(rect.width)))
+            height = max(1, int(round(rect.height)))
+            pages.append(
+                Page(
+                    width=width,
+                    height=height,
+                    source=RenderedPageSource(
+                        document, number, rect.width, rect.height
+                    ),
+                )
             )
-        )
+    except Exception:
+        document.close()
+        raise
     return Book(
         path=path,
         title=title,
@@ -206,5 +243,5 @@ def _load_with_fitz(path: Path) -> Book:
         fmt=fmt,
         pages=pages,
         closers=[document.close],
-        used_fallback=True,
+        used_fallback=used_fallback,
     )

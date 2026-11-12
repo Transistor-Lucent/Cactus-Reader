@@ -498,7 +498,7 @@ class DropOverlay(QWidget):
         painter.drawText(
             QRect(0, self.height() // 2 + 30, self.width(), 28),
             Qt.AlignmentFlag.AlignCenter,
-            "支持 EPUB 与 MOBI 格式",
+            "支持 EPUB、MOBI 与 PDF 格式",
         )
 
 

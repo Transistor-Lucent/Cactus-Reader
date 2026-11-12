@@ -43,9 +43,9 @@ from .welcome import WelcomePage
 
 log = logging.getLogger(__name__)
 
-SUPPORTED_SUFFIXES = {".epub", ".mobi", ".prc", ".azw", ".azw3"}
+SUPPORTED_SUFFIXES = {".epub", ".mobi", ".prc", ".azw", ".azw3", ".pdf"}
 _FILE_FILTER = (
-    "漫画文件 (*.epub *.mobi *.prc *.azw *.azw3);;所有文件 (*.*)"
+    "漫画文件 (*.epub *.mobi *.prc *.azw *.azw3 *.pdf);;所有文件 (*.*)"
 )
 
 
@@ -131,7 +131,7 @@ class MainWindow(QMainWindow):
         title_box.setSpacing(1)
         self._header_title = ElidedLabel("Cactus Reader")
         self._header_title.setObjectName("HeaderTitle")
-        self._header_meta = ElidedLabel("EPUB / MOBI 漫画阅读器")
+        self._header_meta = ElidedLabel("EPUB / MOBI / PDF 漫画阅读器")
         self._header_meta.setObjectName("HeaderMeta")
         title_box.addWidget(self._header_title)
         title_box.addWidget(self._header_meta)
@@ -155,7 +155,7 @@ class MainWindow(QMainWindow):
         self._open_button.setIconSize(QSize(17, 17))
         self._open_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self._open_button.setFixedHeight(36)
-        self._open_button.setToolTip("打开 EPUB / MOBI 漫画（Ctrl+O）")
+        self._open_button.setToolTip("打开 EPUB / MOBI / PDF 漫画（Ctrl+O）")
         self._open_button.clicked.connect(self.open_dialog)
         header_box.addWidget(self._open_button)
 
@@ -364,7 +364,7 @@ class MainWindow(QMainWindow):
         path = Path(path_value).expanduser()
         suffix = path.suffix.lower()
         if suffix not in SUPPORTED_SUFFIXES:
-            self._error("无法打开漫画", "仅支持 EPUB 与 MOBI 格式的漫画。")
+            self._error("无法打开漫画", "仅支持 EPUB、MOBI 与 PDF 格式的漫画。")
             return
         if not path.exists():
             self._error("无法打开漫画", f"找不到文件：\n{path}")
@@ -749,7 +749,7 @@ class MainWindow(QMainWindow):
     def _update_header_for_book(self) -> None:
         if self._book is None:
             self._header_title.setText("Cactus Reader")
-            self._header_meta.setText("EPUB / MOBI 漫画阅读器")
+            self._header_meta.setText("EPUB / MOBI / PDF 漫画阅读器")
             return
         self._header_title.setText(self._book.title)
         parts = []

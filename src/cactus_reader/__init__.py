@@ -1,4 +1,4 @@
-"""Cactus Reader: a portable EPUB / MOBI comic reader."""
+"""Cactus Reader: a portable EPUB / MOBI / PDF comic reader."""
 
 from .paths import APP_NAME, APP_VERSION
 

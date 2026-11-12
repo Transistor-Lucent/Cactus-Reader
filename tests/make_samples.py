@@ -1,8 +1,9 @@
 """Generate small, self-contained comic samples used by the test suite.
 
 The generated pages are deliberately simple but look like comic pages.  The
-resulting EPUB is also fed to Calibre's ``ebook-convert`` by the developer to
-produce a real MOBI sample; the test suite itself never requires Calibre.
+EPUB is also fed to Calibre's ``ebook-convert`` by the developer to produce a
+real MOBI sample, while the PDF is built directly with PyMuPDF.  The test
+suite itself never requires Calibre.
 """
 
 from __future__ import annotations
@@ -242,10 +243,38 @@ def make_epub(path: Path, pages: int = 11) -> Path:
     return path
 
 
+def make_pdf(path: Path, pages: int = 5) -> Path:
+    """Build a scan-like PDF whose pages contain the same comic artwork."""
+    import pymupdf
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    document = pymupdf.open()
+    try:
+        for index in range(1, pages + 1):
+            page = document.new_page(width=900, height=1300)
+            page.insert_image(
+                pymupdf.Rect(0, 0, 900, 1300),
+                stream=make_page(index, pages),
+            )
+        document.set_metadata(
+            {
+                "title": "Cactus Reader 示例漫画",
+                "author": "Cactus Studio",
+                "subject": "Cactus Reader PDF sample",
+            }
+        )
+        document.save(path, garbage=4, deflate=True)
+    finally:
+        document.close()
+    return path
+
+
 def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     epub = make_epub(OUT / "cactus_sample.epub")
+    pdf = make_pdf(OUT / "cactus_sample.pdf")
     print(epub)
+    print(pdf)
     return 0
 
 

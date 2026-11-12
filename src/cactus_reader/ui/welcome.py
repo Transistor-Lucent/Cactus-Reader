@@ -67,7 +67,7 @@ class WelcomePage(QWidget):
         layout.addWidget(open_button, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addSpacing(10)
 
-        hint = QLabel("或将 EPUB / MOBI 文件拖放到窗口中")
+        hint = QLabel("或将 EPUB / MOBI / PDF 文件拖放到窗口中")
         hint.setObjectName("WelcomeHint")
         hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(hint)

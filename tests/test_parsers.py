@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import tempfile
 import unittest
 from pathlib import Path
 
-from cactus_reader.book import BookError, load_book
+import pymupdf
+
+from cactus_reader.book import BookError, DrmProtectedError, load_book
 
 SAMPLES = Path(__file__).resolve().parent / "samples"
 
@@ -54,6 +57,46 @@ class ParserTests(unittest.TestCase):
             self.assertFalse(image.isNull())
         finally:
             book.close()
+
+    def test_pdf_sample_is_rendered_page_by_page(self) -> None:
+        book = load_book(SAMPLES / "cactus_sample.pdf")
+        try:
+            self.assertEqual(book.page_count, 5)
+            self.assertEqual(book.fmt, "PDF")
+            self.assertEqual(book.title, "Cactus Reader 示例漫画")
+            self.assertEqual(book.author, "Cactus Studio")
+            self.assertFalse(book.used_fallback)
+            for page in book.pages:
+                self.assertEqual((page.width, page.height), (900, 1300))
+            image = book.pages[0].source.load_image(None)
+            self.assertFalse(image.isNull())
+            self.assertEqual((image.width(), image.height()), (1800, 2600))
+        finally:
+            book.close()
+
+    def test_password_protected_pdf_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "protected.pdf"
+            document = pymupdf.open()
+            try:
+                document.new_page(width=200, height=300)
+                document.save(
+                    target,
+                    encryption=pymupdf.PDF_ENCRYPT_AES_256,
+                    owner_pw="owner",
+                    user_pw="secret",
+                )
+            finally:
+                document.close()
+            with self.assertRaises(DrmProtectedError):
+                load_book(target)
+
+    def test_broken_pdf_reports_a_readable_error(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "broken.pdf"
+            target.write_bytes(b"not a pdf")
+            with self.assertRaises(BookError):
+                load_book(target)
 
     def test_missing_file(self) -> None:
         with self.assertRaises(BookError):
