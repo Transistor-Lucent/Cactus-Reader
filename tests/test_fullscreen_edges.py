@@ -94,6 +94,21 @@ class FullscreenEdgeButtonTests(unittest.TestCase):
         self.assertFalse(self.left_button.isVisible())
         self.assertTrue(self.right_button.isVisible())
 
+    def test_edge_buttons_have_no_tooltips(self) -> None:
+        self.assertEqual(self.left_button.toolTip(), "")
+        self.assertEqual(self.right_button.toolTip(), "")
+
+        self._enter_fullscreen()
+        self.assertEqual(self.left_button.toolTip(), "")
+        self.assertEqual(self.right_button.toolTip(), "")
+
+        # Switching to right-to-left must not reintroduce direction hints.
+        self.settings.direction = "rtl"
+        self.window._apply_reading_settings()
+        self.app.processEvents()
+        self.assertEqual(self.left_button.toolTip(), "")
+        self.assertEqual(self.right_button.toolTip(), "")
+
     def test_reveal_zone_surrounds_the_button(self) -> None:
         self._enter_fullscreen()
         pad = self.window._EDGE_HOVER_PAD

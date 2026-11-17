@@ -258,14 +258,10 @@ class MainWindow(QMainWindow):
 
         # Fullscreen edge page-turn keys.  They live above the reader and are
         # shown one at a time while the pointer is around that button.
-        self._edge_left_button = EdgeTurnButton(
-            "chevron-left", "上一页（←）", central
-        )
+        self._edge_left_button = EdgeTurnButton("chevron-left", parent=central)
         self._edge_left_button.clicked.connect(self._left_action)
         self._edge_left_button.hide()
-        self._edge_right_button = EdgeTurnButton(
-            "chevron-right", "下一页（→）", central
-        )
+        self._edge_right_button = EdgeTurnButton("chevron-right", parent=central)
         self._edge_right_button.clicked.connect(self._right_action)
         self._edge_right_button.hide()
         self._position_edge_buttons()
@@ -552,15 +548,9 @@ class MainWindow(QMainWindow):
             self._direction_button.setIcon(QIcon())
             self._direction_button.setToolTip("点击切换阅读方向")
 
-        # The fullscreen edge buttons mirror the footer arrows.
+        # The fullscreen edge buttons mirror the header arrows.
         self._edge_left_button.setEnabled(has_book and left_enabled)
         self._edge_right_button.setEnabled(has_book and right_enabled)
-        self._edge_left_button.setToolTip(
-            "下一页（←）" if rtl else "上一页（←）"
-        )
-        self._edge_right_button.setToolTip(
-            "上一页（→）" if rtl else "下一页（→）"
-        )
         self._position_edge_buttons()
         self._update_edge_buttons()
         if self._fullscreen and has_book:
